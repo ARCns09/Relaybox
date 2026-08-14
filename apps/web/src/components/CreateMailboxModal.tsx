@@ -2,6 +2,7 @@ import { Check, Clock3, Dice5, Loader2, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LIFETIME_OPTIONS } from "@relaybox/shared";
 import { Modal } from "./Modal";
+import { BeautifulSelect } from "./BeautifulSelect";
 
 interface Props { domain: string; defaultLifetime: number | null; onClose(): void; onCreate(alias: string | undefined, lifetime: number | null): Promise<void> }
 
@@ -36,7 +37,7 @@ export function CreateMailboxModal({ domain, defaultLifetime, onClose, onCreate 
         {LIFETIME_OPTIONS.map((option) => <button key={String(option.value)} className={lifetime === option.value ? "active" : ""} onClick={() => setLifetime(option.value)}>{option.label}{lifetime === option.value && <Check />}</button>)}
         <button className={lifetime === "custom" ? "active" : ""} onClick={() => setLifetime("custom")}>Custom{lifetime === "custom" && <Check />}</button>
       </fieldset>
-      {lifetime === "custom" && <div className="custom-duration"><input type="number" min={customUnit === "minutes" ? 5 : 1} max={customUnit === "years" ? 100 : customUnit === "days" ? 36500 : customUnit === "hours" ? 876000 : 52560000} value={customValue} onChange={(event) => setCustomValue(Math.max(customUnit === "minutes" ? 5 : 1, Number(event.target.value)))} /><select value={customUnit} onChange={(event) => changeCustomUnit(event.target.value as typeof customUnit)}><option>minutes</option><option>hours</option><option>days</option><option>years</option></select></div>}
+      {lifetime === "custom" && <div className="custom-duration"><input type="number" min={customUnit === "minutes" ? 5 : 1} max={customUnit === "years" ? 100 : customUnit === "days" ? 36500 : customUnit === "hours" ? 876000 : 52560000} value={customValue} onChange={(event) => setCustomValue(Math.max(customUnit === "minutes" ? 5 : 1, Number(event.target.value)))} /><BeautifulSelect value={customUnit} options={[{ value: "minutes", label: "Minutes" }, { value: "hours", label: "Hours" }, { value: "days", label: "Days" }, { value: "years", label: "Years" }]} onChange={(value) => changeCustomUnit(value as typeof customUnit)} ariaLabel="Custom lifetime unit" /></div>}
       <div className="privacy-callout"><ShieldCheck /><p><strong>Unlisted and private</strong><span>Knowing the address alone never grants inbox access.</span></p></div>
     </div>
     <footer className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || (mode === "custom" && safeAlias.length < 2)} onClick={submit}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Create mailbox</button></footer>

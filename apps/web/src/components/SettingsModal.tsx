@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LIFETIME_OPTIONS } from "@relaybox/shared";
 import type { Settings } from "../storage";
 import { Modal } from "./Modal";
+import { BeautifulSelect } from "./BeautifulSelect";
 
 export function SettingsModal({ value, onClose, onSave }: { value: Settings; onClose(): void; onSave(value: Settings): void }) {
   const [settings, setSettings] = useState(value);
@@ -13,7 +14,7 @@ export function SettingsModal({ value, onClose, onSave }: { value: Settings; onC
         <div className="theme-options">{(["dark", "light", "system"] as const).map((theme) => <button className={settings.theme === theme ? "active" : ""} key={theme} onClick={() => setSettings({ ...settings, theme })}>{theme === "dark" ? <Moon /> : theme === "light" ? <Sun /> : <Palette />}<span>{theme}</span>{settings.theme === theme && <Check />}</button>)}</div>
       </SettingsSection>
       <SettingsSection icon={<Timer />} title="Mailbox defaults">
-        <label className="select-row"><span>Default lifetime<small>Used for new mailboxes</small></span><select value={String(settings.defaultLifetime)} onChange={(event) => setSettings({ ...settings, defaultLifetime: event.target.value === "null" ? null : Number(event.target.value) })}>{LIFETIME_OPTIONS.map((option) => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}</select></label>
+        <div className="select-row"><span>Default lifetime<small>Used for new mailboxes</small></span><BeautifulSelect value={String(settings.defaultLifetime)} options={LIFETIME_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))} onChange={(value) => setSettings({ ...settings, defaultLifetime: value === "null" ? null : Number(value) })} ariaLabel="Default mailbox lifetime" minMenuWidth={175} /></div>
         <Switch checked={settings.autoCopy} label="Copy new address automatically" onClick={() => toggle("autoCopy")} />
         <Switch checked={settings.autoDeleteExpired} label="Forget expired mailboxes automatically" onClick={() => toggle("autoDeleteExpired")} />
       </SettingsSection>

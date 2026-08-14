@@ -1,7 +1,8 @@
-import { Check, ChevronDown, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Mailbox } from "@relaybox/shared";
 import { Brand } from "./Brand";
 import { configuredLifetimeLabel, expiryProgress, formatBytes, lifetimeLabel } from "../utils";
+import { BeautifulSelect } from "./BeautifulSelect";
 
 interface Props {
   mailboxes: Mailbox[];
@@ -31,13 +32,7 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
           <span title={active.address}>{active.alias}<small>@{active.domain}</small></span>
           <button onClick={onCopy} aria-label="Copy email address">{copied ? <Check /> : <Copy />}</button>
         </div>
-        <div className="mailbox-picker">
-          <Inbox />
-          <select value={active.address} onChange={(event) => onSelect(event.target.value)} aria-label="Switch mailbox">
-            {mailboxes.map((mailbox) => <option value={mailbox.address} key={mailbox.id}>{mailbox.address}</option>)}
-          </select>
-          <ChevronDown />
-        </div>
+        <BeautifulSelect className="mailbox-picker" value={active.address} options={mailboxes.map((mailbox) => ({ value: mailbox.address, label: mailbox.address, description: mailbox.expiresAt ? configuredLifetimeLabel(mailbox.createdAt, mailbox.expiresAt) : "Never expires" }))} onChange={onSelect} ariaLabel="Switch mailbox" leadingIcon={<Inbox />} minMenuWidth={250} />
       </div>
 
       <div className="metric-card">

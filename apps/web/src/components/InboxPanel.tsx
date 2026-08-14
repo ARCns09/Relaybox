@@ -2,6 +2,7 @@ import { ArrowDownUp, Inbox, Menu, Paperclip, Plus, RefreshCw, Search, Sparkles 
 import type { MessageSummary } from "@relaybox/shared";
 import { SenderAvatar } from "./Brand";
 import { formatBytes, relativeTime } from "../utils";
+import { BeautifulSelect } from "./BeautifulSelect";
 
 interface Props {
   messages: MessageSummary[];
@@ -33,7 +34,7 @@ export function InboxPanel(props: Props) {
     </header>
     <div className="inbox-tools">
       <label className="search-box"><Search /><input value={props.search} onChange={(event) => props.onSearch(event.target.value)} placeholder="Search mail" /></label>
-      <label className="sort-box" title="Sort messages"><ArrowDownUp /><select value={props.sort} onChange={(event) => props.onSort(event.target.value as Props["sort"])}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="sender">Sender</option></select></label>
+      <BeautifulSelect className="sort-select" value={props.sort} options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "sender", label: "Sender" }]} onChange={(value) => props.onSort(value as Props["sort"])} ariaLabel="Sort messages" leadingIcon={<ArrowDownUp />} minMenuWidth={145} />
     </div>
     <div className="message-list">
       {!props.hasMailbox ? <Empty icon={<Plus />} title="Create your first mailbox" copy="Pick an address and lifetime. No account needed." action="Create mailbox" onAction={props.onCreate} />
