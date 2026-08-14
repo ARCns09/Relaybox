@@ -50,7 +50,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     maxMessageBytes: numberFromEnv("MAX_MESSAGE_SIZE_MB", 10) * 1024 * 1024,
     maxAttachmentBytes: numberFromEnv("MAX_ATTACHMENT_SIZE_MB", 5) * 1024 * 1024,
     blockRemoteImages: (process.env.BLOCK_REMOTE_IMAGES ?? "true") === "true",
-    allowDeletions: (process.env.ALLOW_DELETIONS ?? "false") === "true",
+    allowDeletions: (process.env.ALLOW_DELETIONS ?? "true") === "true",
     attachmentStoragePath: localPath(process.env.ATTACHMENT_STORAGE_PATH ?? "./storage/attachments"),
     smtpHost: process.env.SMTP_HOST ?? "",
     smtpPort: numberFromEnv("SMTP_PORT", 587),

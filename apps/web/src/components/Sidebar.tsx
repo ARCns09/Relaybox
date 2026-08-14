@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, X } from "lucide-react";
+import { Check, ChevronDown, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Mailbox } from "@relaybox/shared";
 import { Brand } from "./Brand";
 import { configuredLifetimeLabel, expiryProgress, formatBytes, lifetimeLabel } from "../utils";
@@ -13,10 +13,11 @@ interface Props {
   onSelect(address: string): void;
   onCopy(): void;
   onCreate(): void;
+  onDelete(): void;
   onSettings(): void;
 }
 
-export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelect, onCopy, onCreate, onSettings }: Props) {
+export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelect, onCopy, onCreate, onDelete, onSettings }: Props) {
   return <aside className={`sidebar ${open ? "is-open" : ""}`}>
     <div className="sidebar-top">
       <Brand />
@@ -52,6 +53,8 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
         <div className="progress neutral"><i style={{ width: `${Math.min(100, (active.storageUsed / active.storageLimit) * 100)}%` }} /></div>
         <p>{formatBytes(active.storageUsed)} of {formatBytes(active.storageLimit)}</p>
       </div>
+
+      <button className="danger-ghost" onClick={onDelete}><Trash2 /> Delete mailbox permanently</button>
 
     </> : <div className="sidebar-empty"><ShieldCheck /><p>No active mailbox</p><span>Create a private address to begin.</span></div>}
 

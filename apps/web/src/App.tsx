@@ -139,6 +139,16 @@ export function App() {
     setCopied(true); setTimeout(() => setCopied(false), 1400);
   };
 
+  const deleteMailbox = async () => {
+    if (!active || !credential || !window.confirm(`Permanently delete ${active.address} and every message in it?`)) return;
+    try {
+      await api.deleteMailbox(active.address, credential.token);
+      removeLocalMailbox(active.address);
+      setMessages([]); setMessage(undefined); setSelectedId(undefined);
+      setToast({ message: "Mailbox permanently deleted.", tone: "success" });
+    } catch (error) { showError(error); }
+  };
+
   const openMessage = async (id: string) => {
     if (!credential) return;
     setSelectedId(id); setLoadingMessage(true); setMobileView("message");
@@ -152,6 +162,17 @@ export function App() {
       }
     } catch (error) { showError(error); }
     finally { setLoadingMessage(false); }
+  };
+
+  const deleteMessage = async () => {
+    if (!credential || !selectedId || !window.confirm("Permanently delete this message?")) return;
+    try {
+      await api.deleteMessage(credential.address, credential.token, selectedId);
+      setMessages((current) => current.filter((item) => item.id !== selectedId));
+      setMessage(undefined); setSelectedId(undefined); setMobileView("inbox");
+      setToast({ message: "Message permanently deleted.", tone: "success" });
+      void refreshInbox();
+    } catch (error) { showError(error); }
   };
 
   const injectDemo = async () => {
@@ -184,11 +205,11 @@ export function App() {
   return <main className="app-shell" data-mobile-view={mobileView}>
     <div className={`sidebar-scrim ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
     <Sidebar mailboxes={mailboxes} active={active} copied={copied} now={now} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
-      onSelect={(address) => { setActiveAddress(address); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onSettings={() => setSettingsOpen(true)} />
+      onSelect={(address) => { setActiveAddress(address); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onDelete={deleteMailbox} onSettings={() => setSettingsOpen(true)} />
     <InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} hasMailbox={Boolean(active)} development={health.isDevelopment}
       onMenu={() => setSidebarOpen(true)} onSearch={setSearch} onSort={setSort} onRefresh={refreshInbox} onSelect={openMessage} onCreate={() => setCreateOpen(true)} onDemo={injectDemo} />
     <MessageViewer message={selectedMessage} loading={loadingMessage} defaultHtml={settings.defaultHtml} blockRemoteImages={settings.blockRemoteImages}
-      onBack={() => setMobileView("inbox")} onReply={() => setReplyOpen(true)}
+      onBack={() => setMobileView("inbox")} onReply={() => setReplyOpen(true)} onDelete={deleteMessage}
       onDownload={(id, filename) => credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} />
     {createOpen && <CreateMailboxModal domain={health.mailDomain} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
     {settingsOpen && <SettingsModal value={settings} onClose={() => setSettingsOpen(false)} onSave={savePreferences} />}

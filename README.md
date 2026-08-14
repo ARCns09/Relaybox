@@ -50,7 +50,7 @@ In development, an empty inbox also offers a “Send a test message” action. A
 - Remote images are replaced with inert placeholders and can be loaded explicitly. Referrers are disabled in the message frame.
 - Attachments use opaque storage keys, normalized filenames, MIME restrictions, quotas, size limits, `nosniff`, and forced-download headers.
 - Mailbox creation, injection, API usage, and 1:1 replies are rate-limited. The app has no bulk-send surface.
-- Manual mailbox and message deletion is unavailable in the client. Retained backend deletion handlers are denied by default and require the explicit `ALLOW_DELETIONS=true` server flag.
+- Mailboxes and individual messages can be permanently deleted from the client after confirmation. Set `ALLOW_DELETIONS=false` on the server to disable both backend deletion handlers.
 - Expired mailboxes still cascade-delete messages and remove attachment files according to their configured lifetime.
 
 For internet-facing deployments, terminate TLS at a reverse proxy, use a real mail domain, keep `.env` private, and set `NODE_ENV=production` to remove the injection route.

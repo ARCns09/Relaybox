@@ -26,11 +26,13 @@ export const api = {
   createMailbox: (input: CreateMailboxInput) => request<MailboxCredential>("/api/mailboxes", { method: "POST", body: JSON.stringify(input) }),
   mailbox: (credential: Pick<MailboxCredential, "token"> & { address: string }) =>
     request<{ mailbox: Mailbox }>(mailboxPath(credential.address), { headers: auth(credential.token) }),
+  deleteMailbox: (address: string, token: string) => request<void>(mailboxPath(address), { method: "DELETE", headers: auth(token) }),
   messages: (address: string, token: string) => request<{ messages: MessageSummary[]; mailbox: Mailbox }>(`${mailboxPath(address)}/messages`, { headers: auth(token) }),
   message: (address: string, token: string, id: string) => request<{ message: Message }>(`${mailboxPath(address)}/messages/${id}`, { headers: auth(token) }),
   markRead: (address: string, token: string, id: string, isRead = true) => request<{ message: Message }>(`${mailboxPath(address)}/messages/${id}`, {
     method: "PATCH", headers: auth(token), body: JSON.stringify({ isRead }),
   }),
+  deleteMessage: (address: string, token: string, id: string) => request<void>(`${mailboxPath(address)}/messages/${id}`, { method: "DELETE", headers: auth(token) }),
   reply: (address: string, token: string, input: { to: string; subject: string; textBody: string }) => request<{ messageId: string }>(`${mailboxPath(address)}/reply`, {
     method: "POST", headers: auth(token), body: JSON.stringify(input),
   }),

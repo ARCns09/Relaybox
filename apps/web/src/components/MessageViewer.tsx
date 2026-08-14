@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, ExternalLink, FileText, ImageOff, MailOpen, Paperclip, Printer, Reply, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, FileText, ImageOff, MailOpen, Paperclip, Printer, Reply, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import type { Message } from "@relaybox/shared";
@@ -12,10 +12,11 @@ interface Props {
   blockRemoteImages: boolean;
   onBack(): void;
   onReply(): void;
+  onDelete(): void;
   onDownload(id: string, filename: string): void;
 }
 
-export function MessageViewer({ message, loading, defaultHtml, blockRemoteImages, onBack, onReply, onDownload }: Props) {
+export function MessageViewer({ message, loading, defaultHtml, blockRemoteImages, onBack, onReply, onDelete, onDownload }: Props) {
   const [view, setView] = useState<"html" | "text">(defaultHtml ? "html" : "text");
   const [loadRemote, setLoadRemote] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -53,6 +54,7 @@ export function MessageViewer({ message, loading, defaultHtml, blockRemoteImages
       </div>
       <span className="toolbar-spacer" />
       <button className="icon-button" onClick={() => frameRef.current?.contentWindow?.print()} aria-label="Print"><Printer /></button>
+      <button className="icon-button delete-message-button" onClick={onDelete} aria-label="Delete message" title="Delete message"><Trash2 /></button>
     </header>
     <article className="message-view">
       <div className="message-title-row">

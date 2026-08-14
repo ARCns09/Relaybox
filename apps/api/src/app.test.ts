@@ -14,6 +14,7 @@ describe("Relaybox API", () => {
     app = await buildApp({
       nodeEnv: "test", isDevelopment: true, databasePath: join(directory, "test.db"), attachmentStoragePath: join(directory, "attachments"),
       mailDomain: "mail.test", storageLimitBytes: 1024 * 1024, maxMessageBytes: 512 * 1024, maxAttachmentBytes: 128 * 1024,
+      allowDeletions: true,
     });
   });
 
@@ -84,7 +85,13 @@ describe("Relaybox API", () => {
     expect(response.statusCode).toBe(413);
   });
 
-  it("denies mailbox and message deletion by default", async () => {
+  it("can disable mailbox and message deletion with the feature flag", async () => {
+    await app.close();
+    app = await buildApp({
+      nodeEnv: "test", isDevelopment: true, databasePath: join(directory, "restricted.db"), attachmentStoragePath: join(directory, "restricted-files"),
+      mailDomain: "mail.test", storageLimitBytes: 1024 * 1024, maxMessageBytes: 512 * 1024, maxAttachmentBytes: 128 * 1024,
+      allowDeletions: false,
+    });
     const created = await create("read-only-box");
     const headers = { authorization: `Bearer ${created.token}` };
     const mailboxResponse = await app.inject({ method: "DELETE", url: `/api/mailboxes/${created.mailbox.address}`, headers });

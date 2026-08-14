@@ -75,6 +75,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .progress i { display: block; height: 100%; background: linear-gradient(90deg, #7657ff, #a490ff); border-radius: inherit; transition: width 1s linear; }.progress.neutral i { background: var(--green); }
 .metric-card p { margin: 0; color: var(--faint); font-size: 10px; }
 .no-expiration { margin-top: 10px !important; }
+.danger-ghost { display: flex; align-items: center; gap: 7px; padding: 10px 5px; border: 0; background: transparent; color: var(--faint); font-size: 10px; }.danger-ghost:hover, .delete-message-button:hover { color: var(--red); }.danger-ghost svg { width: 13px; }
 .sidebar-bottom { margin-top: auto; }
 .active-count { display: flex; align-items: center; gap: 10px; padding: 14px 4px; }
 .active-count > span { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; font-size: 12px; font-weight: 750; }

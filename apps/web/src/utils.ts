@@ -24,8 +24,9 @@ export function lifetimeLabel(expiresAt: string | null, now = Date.now()): strin
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (days) return `${days}d ${hours}h remaining`;
-  if (hours) return `${hours}h ${minutes}m remaining`;
+  const remainingSeconds = seconds % 60;
+  if (days) return `${days}d ${hours}h ${minutes}m ${remainingSeconds}s remaining`;
+  if (hours) return `${hours}h ${minutes}m ${remainingSeconds}s remaining`;
   return `${minutes}m ${seconds % 60}s remaining`;
 }
 
