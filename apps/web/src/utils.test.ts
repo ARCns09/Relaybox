@@ -19,7 +19,8 @@ describe("display utilities", () => {
     expect(configuredLifetimeLabel(created, "2026-01-31T00:00:00Z")).toBe("30 days");
     expect(configuredLifetimeLabel(created, "2026-01-01T01:30:00Z")).toBe("1 hour 30 minutes");
     expect(configuredLifetimeLabel(created, null)).toBe("Never expires");
-    expect(lifetimeLabel(null)).toBe("No expiration");
+    expect(lifetimeLabel(null)).toBe("Never expires");
+    expect(configuredLifetimeLabel(created, "2028-01-01T00:00:00Z")).toBe("2 years");
   });
 });
 

@@ -67,9 +67,9 @@ export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<Fast
   }));
 
   app.post<{ Body: CreateMailboxInput }>("/api/mailboxes", { config: { rateLimit: { max: 12, timeWindow: "1 hour" } } }, async (request, reply) => {
-    const lifetime = request.body?.lifetimeSeconds ?? config.defaultLifetime;
-    if (lifetime !== null && (!Number.isInteger(lifetime) || lifetime < 300 || lifetime > 31_536_000)) {
-      throw new HttpError(400, "Lifetime must be between 5 minutes and 365 days, or never expire.");
+    const lifetime = request.body?.lifetimeSeconds === undefined ? config.defaultLifetime : request.body.lifetimeSeconds;
+    if (lifetime !== null && (!Number.isInteger(lifetime) || lifetime < 300 || lifetime > 3_153_600_000)) {
+      throw new HttpError(400, "Lifetime must be between 5 minutes and 100 years, or never expire.");
     }
     let alias = request.body?.alias ? normalizeAlias(request.body.alias) : "";
     if (alias) {

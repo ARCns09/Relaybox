@@ -43,6 +43,15 @@ describe("Relaybox API", () => {
     expect(duplicate.statusCode).toBe(409);
   });
 
+  it("preserves never-expiring and multi-year mailbox lifetimes", async () => {
+    const permanent = await create("permanent-box", null);
+    expect((await app.inject({ method: "GET", url: `/api/mailboxes/${permanent.mailbox.address}`, headers: { authorization: `Bearer ${permanent.token}` } })).json().mailbox.expiresAt).toBeNull();
+
+    const multiYear = await create("long-lived-box", 2 * 31_536_000);
+    const details = (await app.inject({ method: "GET", url: `/api/mailboxes/${multiYear.mailbox.address}`, headers: { authorization: `Bearer ${multiYear.token}` } })).json().mailbox;
+    expect(new Date(details.expiresAt).getTime() - new Date(details.createdAt).getTime()).toBe(2 * 31_536_000 * 1000);
+  });
+
   it("injects, sanitizes, and reads a message", async () => {
     const created = await create();
     const injected = await app.inject({ method: "POST", url: "/api/dev/inject-email", payload: {

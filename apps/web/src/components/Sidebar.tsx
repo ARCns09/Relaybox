@@ -41,11 +41,11 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
       </div>
 
       <div className="metric-card">
-        <div className="metric-heading"><span><Clock3 /> Lifetime</span><strong>{configuredLifetimeLabel(active.createdAt, active.expiresAt)}</strong></div>
+        <div className="metric-heading"><span><Clock3 /> Expires in</span><strong>{configuredLifetimeLabel(active.createdAt, active.expiresAt)}</strong></div>
         {active.expiresAt ? <>
           <div className="progress"><i style={{ width: `${expiryProgress(active.createdAt, active.expiresAt, now)}%` }} /></div>
           <p>{lifetimeLabel(active.expiresAt, now)}</p>
-        </> : <p className="no-expiration">No expiration</p>}
+        </> : <p className="no-expiration">Never expires</p>}
       </div>
 
       <div className="metric-card storage-card">

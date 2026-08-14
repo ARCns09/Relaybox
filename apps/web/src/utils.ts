@@ -18,13 +18,15 @@ export function fullDate(value: string): string {
 }
 
 export function lifetimeLabel(expiresAt: string | null, now = Date.now()): string {
-  if (!expiresAt) return "No expiration";
+  if (!expiresAt) return "Never expires";
   const seconds = Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
   if (!seconds) return "Expired";
-  const days = Math.floor(seconds / 86400);
+  const years = Math.floor(seconds / 31536000);
+  const days = Math.floor((seconds % 31536000) / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = seconds % 60;
+  if (years) return `${years}y ${days}d ${hours}h ${minutes}m ${remainingSeconds}s remaining`;
   if (days) return `${days}d ${hours}h ${minutes}m ${remainingSeconds}s remaining`;
   if (hours) return `${hours}h ${minutes}m ${remainingSeconds}s remaining`;
   return `${minutes}m ${seconds % 60}s remaining`;
@@ -43,11 +45,13 @@ export function configuredLifetimeLabel(createdAt: string, expiresAt: string | n
   const preset = presets.get(totalSeconds);
   if (preset) return preset;
 
-  const days = Math.floor(totalSeconds / 86400);
+  const years = Math.floor(totalSeconds / 31536000);
+  const days = Math.floor((totalSeconds % 31536000) / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   const parts: string[] = [];
+  if (years) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
   if (days) parts.push(`${days} ${days === 1 ? "day" : "days"}`);
   if (hours) parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
   if (minutes) parts.push(`${minutes} ${minutes === 1 ? "minute" : "minutes"}`);
