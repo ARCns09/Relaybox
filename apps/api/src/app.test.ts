@@ -121,5 +121,7 @@ describe("Relaybox API", () => {
     expect(response.statusCode).toBe(204);
     const missing = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}`, headers: { authorization: `Bearer ${created.token}` } });
     expect(missing.statusCode).toBe(404);
+    const recreated = await create("delete-me", null);
+    expect(recreated.mailbox.address).toBe("delete-me@mail.test");
   });
 });
