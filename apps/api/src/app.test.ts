@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
+import type { ResendInboundClient } from "./providers/resend-client.js";
 
 describe("Relaybox API", () => {
   let directory: string;
@@ -41,6 +42,39 @@ describe("Relaybox API", () => {
     await create("unique-name");
     const duplicate = await app.inject({ method: "POST", url: "/api/mailboxes", payload: { alias: "unique-name", lifetimeSeconds: 600 } });
     expect(duplicate.statusCode).toBe(409);
+  });
+
+  it("creates mailboxes only on configured real domains", async () => {
+    await app.close();
+    app = await buildApp({
+      nodeEnv: "test", isDevelopment: true, databasePath: join(directory, "domains.db"), attachmentStoragePath: join(directory, "domain-files"),
+      mailDomain: "relaybox.ryzn.pro", mailDomains: ["relaybox.ryzn.pro"], storageLimitBytes: 1024 * 1024,
+      maxMessageBytes: 512 * 1024, maxAttachmentBytes: 128 * 1024, resendInboundEnabled: false,
+    });
+    const allowed = await app.inject({ method: "POST", url: "/api/mailboxes", payload: { alias: "real-mail", domain: "relaybox.ryzn.pro", lifetimeSeconds: 600 } });
+    expect(allowed.statusCode).toBe(201);
+    expect(allowed.json().mailbox.address).toBe("real-mail@relaybox.ryzn.pro");
+    const denied = await app.inject({ method: "POST", url: "/api/mailboxes", payload: { alias: "wrong-mail", domain: "unconfigured.example", lifetimeSeconds: 600 } });
+    expect(denied.statusCode).toBe(400);
+  });
+
+  it("provides a development-only manual Resend synchronization endpoint", async () => {
+    await app.close();
+    const resendClient: ResendInboundClient = {
+      listReceived: vi.fn(async () => ({ data: [], hasMore: false })),
+      getReceived: vi.fn(async () => { throw new Error("not called"); }),
+      getAttachment: vi.fn(async () => { throw new Error("not called"); }),
+    };
+    app = await buildApp({
+      nodeEnv: "test", isDevelopment: true, databasePath: join(directory, "manual-sync.db"), attachmentStoragePath: join(directory, "manual-sync-files"),
+      mailDomain: "relaybox.ryzn.pro", mailDomains: ["relaybox.ryzn.pro"], storageLimitBytes: 1024 * 1024,
+      maxMessageBytes: 512 * 1024, maxAttachmentBytes: 128 * 1024, resendInboundEnabled: true, resendApiKey: "test-key",
+    }, { resendClient });
+    await app.appContext.resendInbound?.sync();
+    const response = await app.inject({ method: "POST", url: "/api/dev/resend/sync" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ checked: 0, imported: 0, skipped: 0, failed: 0 });
+    expect(resendClient.listReceived).toHaveBeenCalled();
   });
 
   it("preserves never-expiring and multi-year mailbox lifetimes", async () => {

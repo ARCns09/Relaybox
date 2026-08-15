@@ -15,7 +15,7 @@ interface MailboxRow {
 interface MessageRow {
   id: string; mailbox_id: string; message_id: string; sender_name: string; sender_email: string;
   recipients: string; subject: string; text_body: string; html_body: string | null; received_at: string;
-  is_read: number; has_attachments: number; size: number;
+  is_read: number; has_attachments: number; size: number; cc: string; reply_to: string; headers: string;
 }
 
 interface AttachmentRow { id: string; message_id: string; filename: string; mime_type: string; size: number; storage_path: string }
@@ -26,12 +26,16 @@ export interface NewMessageRecord {
   senderName: string;
   senderEmail: string;
   recipients: string[];
+  cc: string[];
+  replyTo: string[];
+  headers: Record<string, string>;
   subject: string;
   textBody: string;
   htmlBody: string | null;
   receivedAt: string;
   size: number;
   attachments: Array<{ filename: string; mimeType: string; size: number; storagePath: string }>;
+  provider?: { name: string; messageId: string };
 }
 
 export class MailDatabase {
@@ -93,6 +97,26 @@ export class MailDatabase {
       CREATE INDEX IF NOT EXISTS idx_messages_mailbox_received ON messages(mailbox_id, received_at DESC);
       CREATE INDEX IF NOT EXISTS idx_mailboxes_expiry ON mailboxes(is_active, expires_at);
     `);
+    this.addColumnIfMissing("messages", "cc", "TEXT NOT NULL DEFAULT '[]'");
+    this.addColumnIfMissing("messages", "reply_to", "TEXT NOT NULL DEFAULT '[]'");
+    this.addColumnIfMissing("messages", "headers", "TEXT NOT NULL DEFAULT '{}'");
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS provider_messages (
+        provider TEXT NOT NULL,
+        provider_message_id TEXT NOT NULL,
+        relaybox_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+        status TEXT NOT NULL CHECK(status IN ('imported', 'skipped')),
+        detail TEXT,
+        imported_at TEXT NOT NULL,
+        PRIMARY KEY (provider, provider_message_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_provider_messages_relaybox ON provider_messages(relaybox_message_id);
+    `);
+  }
+
+  private addColumnIfMissing(table: string, column: string, definition: string): void {
+    const columns = this.connection.prepare(`PRAGMA table_info(${table})`).all() as unknown as Array<{ name: string }>;
+    if (!columns.some((entry) => entry.name === column)) this.connection.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 
   close(): void { this.connection.close(); }
@@ -144,6 +168,17 @@ export class MailDatabase {
 
   aliasExists(address: string): boolean { return Boolean(this.getMailboxRow(address)); }
 
+  providerMessageHandled(provider: string, providerMessageId: string): boolean {
+    return Boolean(this.connection.prepare("SELECT 1 FROM provider_messages WHERE provider = ? AND provider_message_id = ?").get(provider, providerMessageId));
+  }
+
+  recordProviderSkip(provider: string, providerMessageId: string, detail: string): void {
+    this.connection.prepare(`
+      INSERT OR IGNORE INTO provider_messages (provider, provider_message_id, relaybox_message_id, status, detail, imported_at)
+      VALUES (?, ?, NULL, 'skipped', ?, ?)
+    `).run(provider, providerMessageId, detail.slice(0, 240), new Date().toISOString());
+  }
+
   listMessages(mailboxId: string, search = "", sort: "newest" | "oldest" | "sender" = "newest"): MessageSummary[] {
     const orders = { newest: "received_at DESC", oldest: "received_at ASC", sender: "sender_name COLLATE NOCASE ASC" } as const;
     const query = search.trim();
@@ -177,6 +212,9 @@ export class MailDatabase {
     return {
       ...this.messageSummary(row),
       recipients: JSON.parse(row.recipients) as string[],
+      cc: JSON.parse(row.cc) as string[],
+      replyTo: JSON.parse(row.reply_to) as string[],
+      headers: JSON.parse(row.headers) as Record<string, string>,
       textBody: row.text_body,
       htmlBody: row.html_body,
       messageId: row.message_id,
@@ -191,13 +229,20 @@ export class MailDatabase {
     this.connection.exec("BEGIN IMMEDIATE");
     try {
       this.connection.prepare(`
-        INSERT INTO messages (id, mailbox_id, message_id, sender_name, sender_email, recipients, subject, text_body, html_body, received_at, has_attachments, size)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, record.mailboxId, record.messageId, record.senderName, record.senderEmail, JSON.stringify(record.recipients), record.subject,
-        record.textBody, record.htmlBody, record.receivedAt, record.attachments.length ? 1 : 0, record.size);
+        INSERT INTO messages (id, mailbox_id, message_id, sender_name, sender_email, recipients, cc, reply_to, headers, subject, text_body, html_body, received_at, has_attachments, size)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, record.mailboxId, record.messageId, record.senderName, record.senderEmail, JSON.stringify(record.recipients),
+        JSON.stringify(record.cc), JSON.stringify(record.replyTo), JSON.stringify(record.headers), record.subject, record.textBody, record.htmlBody,
+        record.receivedAt, record.attachments.length ? 1 : 0, record.size);
       const insertAttachment = this.connection.prepare("INSERT INTO attachments (id, message_id, filename, mime_type, size, storage_path) VALUES (?, ?, ?, ?, ?, ?)");
       for (const attachment of record.attachments) {
         insertAttachment.run(randomUUID(), id, attachment.filename, attachment.mimeType, attachment.size, attachment.storagePath);
+      }
+      if (record.provider) {
+        this.connection.prepare(`
+          INSERT INTO provider_messages (provider, provider_message_id, relaybox_message_id, status, detail, imported_at)
+          VALUES (?, ?, ?, 'imported', NULL, ?)
+        `).run(record.provider.name, record.provider.messageId, id, new Date().toISOString());
       }
       this.connection.prepare("UPDATE mailboxes SET storage_used = storage_used + ? WHERE id = ?").run(record.size, record.mailboxId);
       this.connection.exec("COMMIT");

@@ -24,7 +24,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const mailboxPath = (address: string) => `/api/mailboxes/${encodeURIComponent(address)}`;
 
 export const api = {
-  health: () => request<{ status: string; mailDomain: string; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean }>("/api/health"),
+  health: () => request<{ status: string; mailDomain: string; mailDomains: string[]; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean }>("/api/health"),
   createMailbox: (input: CreateMailboxInput) => request<MailboxCredential>("/api/mailboxes", { method: "POST", body: JSON.stringify(input) }),
   mailbox: (credential: Pick<MailboxCredential, "token"> & { address: string }) =>
     request<{ mailbox: Mailbox }>(mailboxPath(credential.address), { headers: auth(credential.token) }),

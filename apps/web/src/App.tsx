@@ -12,7 +12,7 @@ import { ReplyModal } from "./components/ReplyModal";
 import { Toast } from "./components/Toast";
 
 interface Health {
-  mailDomain: string; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean;
+  mailDomain: string; mailDomains: string[]; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean;
 }
 
 export function App() {
@@ -26,7 +26,7 @@ export function App() {
   const [loadingMessage, setLoadingMessage] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "sender">("newest");
-  const [health, setHealth] = useState<Health>({ mailDomain: "mail.example.com", defaultLifetime: 86400, storageLimit: 25 * 1024 ** 2, outboundConfigured: false, isDevelopment: false });
+  const [health, setHealth] = useState<Health>({ mailDomain: "mail.example.com", mailDomains: ["mail.example.com"], defaultLifetime: 86400, storageLimit: 25 * 1024 ** 2, outboundConfigured: false, isDevelopment: false });
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -121,9 +121,9 @@ export function App() {
     setActiveAddress((current) => current === address ? credentials.find((item) => item.address !== address)?.address ?? "" : current);
   }, [credentials]);
 
-  const createMailbox = async (alias: string | undefined, lifetimeSeconds: number | null) => {
+  const createMailbox = async (alias: string | undefined, lifetimeSeconds: number | null, domain: string) => {
     try {
-      const result = await api.createMailbox({ ...(alias ? { alias } : {}), lifetimeSeconds });
+      const result = await api.createMailbox({ ...(alias ? { alias } : {}), domain, lifetimeSeconds });
       const nextCredentials = [...credentials, { address: result.mailbox.address, token: result.token }];
       setCredentials(nextCredentials); saveCredentials(nextCredentials);
       setMailboxes((current) => [...current, result.mailbox]);
@@ -211,7 +211,7 @@ export function App() {
     <MessageViewer message={selectedMessage} loading={loadingMessage} defaultHtml={settings.defaultHtml} blockRemoteImages={settings.blockRemoteImages}
       onBack={() => setMobileView("inbox")} onReply={() => setReplyOpen(true)} onDelete={deleteMessage}
       onDownload={(id, filename) => credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} />
-    {createOpen && <CreateMailboxModal domain={health.mailDomain} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
+    {createOpen && <CreateMailboxModal domains={health.mailDomains} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
     {settingsOpen && <SettingsModal value={settings} onClose={() => setSettingsOpen(false)} onSave={savePreferences} />}
     {replyOpen && selectedMessage && active && <ReplyModal message={selectedMessage} from={active.address} onClose={() => setReplyOpen(false)} onSend={sendReply} />}
     {toast && <Toast {...toast} onClose={() => setToast(undefined)} />}

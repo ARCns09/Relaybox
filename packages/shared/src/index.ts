@@ -44,6 +44,9 @@ export interface Attachment {
 
 export interface Message extends MessageSummary {
   recipients: string[];
+  cc: string[];
+  replyTo: string[];
+  headers: Record<string, string>;
   textBody: string;
   htmlBody: string | null;
   messageId: string;
@@ -54,6 +57,7 @@ export interface ApiError { error: string; details?: string[] }
 
 export interface CreateMailboxInput {
   alias?: string;
+  domain?: string;
   lifetimeSeconds: number | null;
 }
 

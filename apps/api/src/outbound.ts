@@ -3,8 +3,12 @@ import type { AppConfig } from "./config.js";
 import { sanitizeEmailHtml } from "./sanitizer.js";
 
 export interface ReplyInput { to: string; subject: string; textBody: string; htmlBody?: string }
+export interface OutboundProvider {
+  readonly configured: boolean;
+  send(from: string, input: ReplyInput): Promise<string>;
+}
 
-export class OutboundService {
+export class SmtpOutboundProvider implements OutboundProvider {
   constructor(private readonly config: AppConfig) {}
 
   get configured(): boolean { return Boolean(this.config.smtpHost); }
@@ -29,6 +33,17 @@ export class OutboundService {
     });
     return result.messageId;
   }
+}
+
+export class OutboundService implements OutboundProvider {
+  private readonly provider: OutboundProvider;
+
+  constructor(config: AppConfig, provider?: OutboundProvider) {
+    this.provider = provider ?? new SmtpOutboundProvider(config);
+  }
+
+  get configured(): boolean { return this.provider.configured; }
+  send(from: string, input: ReplyInput): Promise<string> { return this.provider.send(from, input); }
 }
 
 export class OutboundError extends Error {

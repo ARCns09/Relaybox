@@ -7,6 +7,16 @@ import { sanitizeEmailHtml } from "./sanitizer.js";
 import { sanitizeFilename } from "./security.js";
 import type { RealtimeHub } from "./realtime.js";
 
+export interface NormalizedEmailInput extends InjectEmailInput {
+  recipients?: string[];
+  cc?: string[];
+  replyTo?: string[];
+  headers?: Record<string, string>;
+  messageId?: string;
+  receivedAt?: string;
+  provider?: { name: string; messageId: string };
+}
+
 const blockedMimes = new Set([
   "application/x-msdownload", "application/x-executable", "application/x-sh", "application/x-bat", "text/x-shellscript",
 ]);
@@ -19,7 +29,10 @@ export class IngestionService {
     private readonly realtime: RealtimeHub,
   ) {}
 
-  async ingest(input: InjectEmailInput): Promise<MessageSummary> {
+  async ingest(input: NormalizedEmailInput): Promise<MessageSummary> {
+    if (input.provider && this.db.providerMessageHandled(input.provider.name, input.provider.messageId)) {
+      throw new IngestionError(409, "Provider message was already handled.");
+    }
     const mailboxRow = this.db.getMailboxRow(input.to.toLowerCase());
     if (!mailboxRow) throw new IngestionError(404, "Recipient mailbox does not exist.");
     if (!mailboxRow.is_active || (mailboxRow.expires_at && new Date(mailboxRow.expires_at) <= new Date())) {
@@ -38,6 +51,9 @@ export class IngestionService {
     }
     const htmlBody = input.htmlBody ? sanitizeEmailHtml(input.htmlBody, this.config.blockRemoteImages) : null;
     const textBody = input.textBody ?? "";
+    const receivedAt = input.receivedAt && Number.isFinite(new Date(input.receivedAt).getTime()) ? new Date(input.receivedAt).toISOString() : new Date().toISOString();
+    const recipients = [...new Set([...(input.recipients ?? []), input.to].map((address) => address.toLowerCase()))];
+    const headers = Object.fromEntries(Object.entries(input.headers ?? {}).map(([key, value]) => [key.toLowerCase().slice(0, 160), String(value).slice(0, 8192)]));
     const contentSize = Buffer.byteLength(textBody) + Buffer.byteLength(htmlBody ?? "") + decoded.reduce((total, item) => total + item.content.byteLength, 0);
     if (contentSize > this.config.maxMessageBytes) throw new IngestionError(413, "Message is too large.");
     if (mailboxRow.storage_used + contentSize > this.config.storageLimitBytes) throw new IngestionError(413, "Mailbox storage quota exceeded.");
@@ -50,16 +66,20 @@ export class IngestionService {
       }
       const message = this.db.insertMessage({
         mailboxId: mailboxRow.id,
-        messageId: `<${randomUUID()}@${this.config.mailDomain}>`,
+        messageId: input.messageId?.trim() || `<${randomUUID()}@${this.config.mailDomain}>`,
         senderName: input.senderName?.trim() || input.senderEmail.split("@")[0] || "Unknown sender",
         senderEmail: input.senderEmail.toLowerCase(),
-        recipients: [input.to.toLowerCase()],
+        recipients,
+        cc: (input.cc ?? []).map((address) => address.toLowerCase()),
+        replyTo: (input.replyTo ?? []).map((address) => address.toLowerCase()),
+        headers,
         subject: input.subject?.trim() || "(No subject)",
         textBody,
         htmlBody,
-        receivedAt: new Date().toISOString(),
+        receivedAt,
         size: contentSize,
         attachments: stored,
+        ...(input.provider ? { provider: input.provider } : {}),
       });
       this.realtime.publish(mailboxRow.id, { type: "message:new", message });
       return message;

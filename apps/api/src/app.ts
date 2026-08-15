@@ -10,6 +10,8 @@ import { LocalAttachmentStorage } from "./storage.js";
 import { RealtimeHub } from "./realtime.js";
 import { IngestionError, IngestionService } from "./ingestion.js";
 import { OutboundError, OutboundService, type ReplyInput } from "./outbound.js";
+import { OfficialResendInboundClient, type ResendInboundClient } from "./providers/resend-client.js";
+import { ResendInboundAdapter, type AttachmentDownloader } from "./providers/resend-inbound.js";
 
 interface AddressParams { address: string }
 interface MessageParams extends AddressParams { messageId: string }
@@ -23,16 +25,33 @@ export interface AppContext {
   config: AppConfig;
   db: MailDatabase;
   realtime: RealtimeHub;
+  resendInbound?: ResendInboundAdapter;
 }
 
-export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<FastifyInstance & { appContext: AppContext }> {
+export interface AppDependencies {
+  resendClient?: ResendInboundClient;
+  attachmentDownloader?: AttachmentDownloader;
+}
+
+export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies: AppDependencies = {}): Promise<FastifyInstance & { appContext: AppContext }> {
   const config = loadConfig(overrides);
+  if (config.resendInboundEnabled && !config.resendApiKey && !dependencies.resendClient) {
+    throw new Error("RESEND_API_KEY is required when RESEND_INBOUND_ENABLED=true");
+  }
   const app = Fastify({ logger: config.nodeEnv !== "test", bodyLimit: config.maxMessageBytes * 2 });
   const db = new MailDatabase(config);
   const storage = new LocalAttachmentStorage(config.attachmentStoragePath);
   const realtime = new RealtimeHub();
   const ingestion = new IngestionService(config, db, storage, realtime);
   const outbound = new OutboundService(config);
+  const resendClient = config.resendInboundEnabled
+    ? dependencies.resendClient ?? new OfficialResendInboundClient(config.resendApiKey)
+    : undefined;
+  const resendInbound = resendClient ? new ResendInboundAdapter(
+    config, resendClient, db, ingestion,
+    { info: (message) => app.log.info(message), warn: (message) => app.log.warn(message) },
+    dependencies.attachmentDownloader,
+  ) : undefined;
 
   await app.register(cors, {
     origin: config.appUrl,
@@ -62,7 +81,7 @@ export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<Fast
   });
 
   app.get("/api/health", async () => ({
-    status: "ok", mailDomain: config.mailDomain, defaultLifetime: config.defaultLifetime,
+    status: "ok", mailDomain: config.mailDomain, mailDomains: config.mailDomains, defaultLifetime: config.defaultLifetime,
     storageLimit: config.storageLimitBytes, outboundConfigured: outbound.configured, isDevelopment: config.isDevelopment,
   }));
 
@@ -72,15 +91,17 @@ export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<Fast
       throw new HttpError(400, "Lifetime must be between 5 minutes and 100 years, or never expire.");
     }
     let alias = request.body?.alias ? normalizeAlias(request.body.alias) : "";
+    const domain = request.body?.domain?.trim().toLowerCase() || config.mailDomain;
+    if (!config.mailDomains.includes(domain)) throw new HttpError(400, "That mailbox domain is not enabled.");
     if (alias) {
       const details = validateAlias(alias);
       if (details.length) throw new HttpError(400, "Alias is invalid.", details);
     } else {
-      do alias = generateAlias(); while (db.aliasExists(`${alias}@${config.mailDomain}`));
+      do alias = generateAlias(); while (db.aliasExists(`${alias}@${domain}`));
     }
-    if (db.aliasExists(`${alias}@${config.mailDomain}`)) throw new HttpError(409, "That address is already in use.");
+    if (db.aliasExists(`${alias}@${domain}`)) throw new HttpError(409, "That address is already in use.");
     const token = createAccessToken();
-    const mailbox = db.createMailbox(alias, config.mailDomain, hashToken(token), lifetime);
+    const mailbox = db.createMailbox(alias, domain, hashToken(token), lifetime);
     return reply.status(201).send({ mailbox, token });
   });
 
@@ -169,6 +190,10 @@ export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<Fast
       const message = await ingestion.ingest(request.body);
       return reply.status(201).send({ message });
     });
+    app.post("/api/dev/resend/sync", async () => {
+      if (!resendInbound) throw new HttpError(503, "Resend inbound synchronization is not enabled.");
+      return resendInbound.sync();
+    });
   }
 
   const cleanup = async () => {
@@ -182,8 +207,13 @@ export async function buildApp(overrides: Partial<AppConfig> = {}): Promise<Fast
   cleanupTimer.unref();
   await cleanup();
 
-  app.addHook("onClose", async () => { clearInterval(cleanupTimer); db.close(); });
-  Object.assign(app, { appContext: { config, db, realtime } });
+  app.addHook("onClose", async () => {
+    clearInterval(cleanupTimer);
+    await resendInbound?.stop();
+    db.close();
+  });
+  resendInbound?.start();
+  Object.assign(app, { appContext: { config, db, realtime, ...(resendInbound ? { resendInbound } : {}) } });
   return app as unknown as FastifyInstance & { appContext: AppContext };
 }
 

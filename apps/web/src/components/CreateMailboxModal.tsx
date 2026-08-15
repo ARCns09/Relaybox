@@ -4,15 +4,16 @@ import { LIFETIME_OPTIONS } from "@relaybox/shared";
 import { Modal } from "./Modal";
 import { BeautifulSelect } from "./BeautifulSelect";
 
-interface Props { domain: string; defaultLifetime: number | null; onClose(): void; onCreate(alias: string | undefined, lifetime: number | null): Promise<void> }
+interface Props { domains: string[]; defaultLifetime: number | null; onClose(): void; onCreate(alias: string | undefined, lifetime: number | null, domain: string): Promise<void> }
 
-export function CreateMailboxModal({ domain, defaultLifetime, onClose, onCreate }: Props) {
+export function CreateMailboxModal({ domains, defaultLifetime, onClose, onCreate }: Props) {
   const [mode, setMode] = useState<"random" | "custom">("random");
   const [alias, setAlias] = useState("");
   const [lifetime, setLifetime] = useState<number | "custom" | null>(defaultLifetime);
   const [customValue, setCustomValue] = useState(2);
   const [customUnit, setCustomUnit] = useState<"minutes" | "hours" | "days" | "years">("hours");
   const [busy, setBusy] = useState(false);
+  const [domain, setDomain] = useState(domains[0] ?? "mail.example.com");
   const safeAlias = alias.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 63);
   const actualLifetime = useMemo(() => lifetime === "custom" ? customValue * ({ minutes: 60, hours: 3600, days: 86400, years: 31536000 }[customUnit]) : lifetime, [lifetime, customValue, customUnit]);
   const changeCustomUnit = (unit: typeof customUnit) => {
@@ -23,7 +24,7 @@ export function CreateMailboxModal({ domain, defaultLifetime, onClose, onCreate 
   };
   const submit = async () => {
     setBusy(true);
-    try { await onCreate(mode === "custom" ? safeAlias : undefined, actualLifetime); }
+    try { await onCreate(mode === "custom" ? safeAlias : undefined, actualLifetime, domain); }
     finally { setBusy(false); }
   };
   return <Modal title="Create a private mailbox" subtitle="A fresh address, protected by a token stored only in this browser." onClose={onClose} className="create-modal">
@@ -31,7 +32,9 @@ export function CreateMailboxModal({ domain, defaultLifetime, onClose, onCreate 
       <div className="segmented"><button className={mode === "random" ? "active" : ""} onClick={() => setMode("random")}><Dice5 /> Random address</button><button className={mode === "custom" ? "active" : ""} onClick={() => setMode("custom")}><Check /> Custom alias</button></div>
       <label className="field"><span>Email address</span><div className="address-input">
         {mode === "random" ? <span className="random-placeholder">A memorable alias will be generated</span> : <input autoFocus value={safeAlias} onChange={(event) => setAlias(event.target.value)} placeholder="your-alias" />}
-        <b>@{domain}</b>
+        {domains.length > 1
+          ? <BeautifulSelect className="domain-select" value={domain} options={domains.map((item) => ({ value: item, label: `@${item}` }))} onChange={setDomain} ariaLabel="Mailbox domain" minMenuWidth={210} />
+          : <b>@{domain}</b>}
       </div></label>
       <fieldset className="lifetime-grid"><legend><Clock3 /> Mailbox lifetime</legend>
         {LIFETIME_OPTIONS.map((option) => <button key={String(option.value)} className={lifetime === option.value ? "active" : ""} onClick={() => setLifetime(option.value)}>{option.label}{lifetime === option.value && <Check />}</button>)}
