@@ -115,6 +115,20 @@ describe("Relaybox API", () => {
     expect(response.statusCode).toBe(410);
   });
 
+  it("exposes expired status without message access and permits immediate cleanup", async () => {
+    const created = await create("expired-status");
+    app.appContext.db.connection.prepare("UPDATE mailboxes SET expires_at = ? WHERE id = ?").run(new Date(Date.now() - 1000).toISOString(), created.mailbox.id);
+    const headers = { authorization: `Bearer ${created.token}` };
+    const status = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}`, headers });
+    expect(status.statusCode).toBe(200);
+    expect(status.json().mailbox.isActive).toBe(false);
+    const messages = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}/messages`, headers });
+    expect(messages.statusCode).toBe(410);
+    const removed = await app.inject({ method: "DELETE", url: `/api/mailboxes/${created.mailbox.address}`, headers });
+    expect(removed.statusCode).toBe(204);
+    expect((await create("expired-status")).mailbox.address).toBe(created.mailbox.address);
+  });
+
   it("enforces mailbox quota", async () => {
     await app.close();
     app = await buildApp({

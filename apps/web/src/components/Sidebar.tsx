@@ -1,7 +1,7 @@
 import { Check, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Mailbox } from "@relaybox/shared";
 import { Brand } from "./Brand";
-import { configuredLifetimeLabel, expiryProgress, formatBytes, lifetimeLabel } from "../utils";
+import { configuredLifetimeLabel, expiryProgress, formatBytes, isMailboxExpired, lifetimeLabel } from "../utils";
 import { BeautifulSelect } from "./BeautifulSelect";
 
 interface Props {
@@ -19,6 +19,8 @@ interface Props {
 }
 
 export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelect, onCopy, onCreate, onDelete, onSettings }: Props) {
+  const expired = active ? isMailboxExpired(active, now) : false;
+  const activeCount = mailboxes.filter((mailbox) => !isMailboxExpired(mailbox, now)).length;
   return <aside className={`sidebar ${open ? "is-open" : ""}`}>
     <div className="sidebar-top">
       <Brand />
@@ -26,13 +28,13 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
     </div>
 
     {active ? <>
-      <div className="eyebrow"><span className="status-dot" /> Active mailbox</div>
+      <div className={`eyebrow ${expired ? "expired-status" : ""}`}><span className={`status-dot ${expired ? "expired" : ""}`} /> {expired ? "Expired mailbox" : "Active mailbox"}</div>
       <div className="address-card">
         <div className="address-row">
           <span title={active.address}>{active.alias}<small>@{active.domain}</small></span>
-          <button onClick={onCopy} aria-label="Copy email address">{copied ? <Check /> : <Copy />}</button>
+          <button onClick={onCopy} disabled={expired} aria-label="Copy email address">{copied ? <Check /> : <Copy />}</button>
         </div>
-        <BeautifulSelect className="mailbox-picker" value={active.address} options={mailboxes.map((mailbox) => ({ value: mailbox.address, label: mailbox.address, description: mailbox.expiresAt ? configuredLifetimeLabel(mailbox.createdAt, mailbox.expiresAt) : "Never expires" }))} onChange={onSelect} ariaLabel="Switch mailbox" leadingIcon={<Inbox />} minMenuWidth={250} />
+        <BeautifulSelect className="mailbox-picker" value={active.address} options={mailboxes.map((mailbox) => ({ value: mailbox.address, label: mailbox.address, description: isMailboxExpired(mailbox, now) ? "Expired" : mailbox.expiresAt ? configuredLifetimeLabel(mailbox.createdAt, mailbox.expiresAt) : "Never expires" }))} onChange={onSelect} ariaLabel="Switch mailbox" leadingIcon={<Inbox />} minMenuWidth={250} />
       </div>
 
       <div className="metric-card">
@@ -49,12 +51,12 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
         <p>{formatBytes(active.storageUsed)} of {formatBytes(active.storageLimit)}</p>
       </div>
 
-      <button className="danger-ghost" onClick={onDelete}><Trash2 /> Delete mailbox permanently</button>
+      <button className="danger-ghost" onClick={onDelete}><Trash2 /> {expired ? "Remove expired mailbox" : "Delete mailbox permanently"}</button>
 
     </> : <div className="sidebar-empty"><ShieldCheck /><p>No active mailbox</p><span>Create a private address to begin.</span></div>}
 
     <div className="sidebar-bottom">
-      <div className="active-count"><span>{mailboxes.length}</span><p>Active mailboxes<small>Stored on this device</small></p></div>
+      <div className="active-count"><span>{activeCount}</span><p>Active mailboxes<small>{mailboxes.length - activeCount ? `${mailboxes.length - activeCount} expired · ` : ""}Stored on this device</small></p></div>
       <button className="primary wide" onClick={onCreate}><Plus /> Create mailbox</button>
       <button className="settings-button" onClick={onSettings}><Settings /> Settings</button>
       <p className="privacy-note"><ShieldCheck /> Private by design · no tracking</p>

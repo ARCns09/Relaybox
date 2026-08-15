@@ -61,13 +61,14 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies:
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } });
   await app.register(rateLimit, { max: 180, timeWindow: "1 minute" });
 
-  const authenticate = (request: FastifyRequest<{ Params: AddressParams }>) => {
+  const authenticate = (request: FastifyRequest<{ Params: AddressParams }>, options: { allowExpired?: boolean } = {}) => {
     const address = request.params.address.toLowerCase();
     const row = db.getMailboxRow(address);
     if (!row) throw new HttpError(404, "Mailbox not found.");
     const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? "";
     if (!token || !tokenMatches(token, row.access_token)) throw new HttpError(401, "Mailbox token is missing or invalid.");
-    if (!row.is_active || (row.expires_at && new Date(row.expires_at) <= new Date())) throw new HttpError(410, "Mailbox has expired.");
+    const expired = !row.is_active || Boolean(row.expires_at && new Date(row.expires_at) <= new Date());
+    if (expired && !options.allowExpired) throw new HttpError(410, "Mailbox has expired.");
     return row;
   };
 
@@ -106,13 +107,14 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies:
   });
 
   app.get<{ Params: AddressParams }>("/api/mailboxes/:address", async (request) => {
-    const row = authenticate(request);
-    return { mailbox: db.touchMailbox(row.id) };
+    const row = authenticate(request, { allowExpired: true });
+    const expired = !row.is_active || Boolean(row.expires_at && new Date(row.expires_at) <= new Date());
+    return { mailbox: expired ? db.getMailboxById(row.id) : db.touchMailbox(row.id) };
   });
 
   app.delete<{ Params: AddressParams }>("/api/mailboxes/:address", async (request, reply) => {
     if (!config.allowDeletions) throw new HttpError(403, "Mailbox deletion is disabled.");
-    const row = authenticate(request);
+    const row = authenticate(request, { allowExpired: true });
     const paths = db.deleteMailbox(row.id);
     await Promise.all(paths.map((path) => storage.delete(path)));
     realtime.publish(row.id, { type: "mailbox:deleted" });

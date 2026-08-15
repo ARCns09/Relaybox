@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { configuredLifetimeLabel, expiryProgress, formatBytes, lifetimeLabel } from "./utils";
+import { configuredLifetimeLabel, expiryProgress, formatBytes, isMailboxExpired, lifetimeLabel } from "./utils";
 import { defaultSettings, loadCredentials, loadSettings, saveCredentials, saveSettings } from "./storage";
 
 describe("display utilities", () => {
@@ -21,6 +21,14 @@ describe("display utilities", () => {
     expect(configuredLifetimeLabel(created, null)).toBe("Never expires");
     expect(lifetimeLabel(null)).toBe("Never expires");
     expect(configuredLifetimeLabel(created, "2028-01-01T00:00:00Z")).toBe("2 years");
+  });
+
+  it("switches mailbox availability exactly when its lifetime ends", () => {
+    const mailbox = { isActive: true, expiresAt: "2026-01-01T00:10:00Z" };
+    expect(isMailboxExpired(mailbox, new Date("2026-01-01T00:09:59Z").getTime())).toBe(false);
+    expect(isMailboxExpired(mailbox, new Date("2026-01-01T00:10:00Z").getTime())).toBe(true);
+    expect(isMailboxExpired({ isActive: false, expiresAt: null })).toBe(true);
+    expect(isMailboxExpired({ isActive: true, expiresAt: null })).toBe(false);
   });
 });
 

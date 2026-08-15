@@ -12,11 +12,12 @@ interface Props {
   className?: string;
   leadingIcon?: ReactNode;
   minMenuWidth?: number;
+  disabled?: boolean;
 }
 
 interface MenuPosition { top: number; left: number; width: number; maxHeight: number }
 
-export function BeautifulSelect({ value, options, onChange, ariaLabel, className = "", leadingIcon, minMenuWidth = 150 }: Props) {
+export function BeautifulSelect({ value, options, onChange, ariaLabel, className = "", leadingIcon, minMenuWidth = 150, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(() => Math.max(0, options.findIndex((option) => option.value === value)));
   const [position, setPosition] = useState<MenuPosition>({ top: 0, left: 0, width: minMenuWidth, maxHeight: 260 });
@@ -39,6 +40,7 @@ export function BeautifulSelect({ value, options, onChange, ariaLabel, className
   }, [minMenuWidth, options.length]);
 
   const openMenu = (direction = 0) => {
+    if (disabled) return;
     const current = Math.max(0, options.findIndex((option) => option.value === value));
     setHighlighted(Math.max(0, Math.min(options.length - 1, current + direction)));
     setOpen(true);
@@ -89,7 +91,7 @@ export function BeautifulSelect({ value, options, onChange, ariaLabel, className
 
   const menuStyle: CSSProperties = { top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight };
   return <div ref={rootRef} className={`beautiful-select ${open ? "is-open" : ""} ${className}`}>
-    <button type="button" className="beautiful-select-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listboxId : undefined} aria-activedescendant={open ? `${listboxId}-${highlighted}` : undefined} onClick={() => open ? setOpen(false) : openMenu()} onKeyDown={onKeyDown}>
+    <button type="button" className="beautiful-select-trigger" disabled={disabled} aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listboxId : undefined} aria-activedescendant={open ? `${listboxId}-${highlighted}` : undefined} onClick={() => open ? setOpen(false) : openMenu()} onKeyDown={onKeyDown}>
       {leadingIcon && <span className="select-leading">{leadingIcon}</span>}
       <span className="select-value">{selected?.label ?? value}</span>
       <ChevronDown className="select-chevron" />

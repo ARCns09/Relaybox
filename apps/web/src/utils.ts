@@ -1,3 +1,10 @@
+import type { Mailbox } from "@relaybox/shared";
+
+export function isMailboxExpired(mailbox: Pick<Mailbox, "expiresAt" | "isActive">, now = Date.now()): boolean {
+  if (!mailbox.isActive) return true;
+  return mailbox.expiresAt !== null && new Date(mailbox.expiresAt).getTime() <= now;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;

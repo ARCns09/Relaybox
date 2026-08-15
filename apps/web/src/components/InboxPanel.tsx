@@ -10,7 +10,7 @@ interface Props {
   search: string;
   sort: "newest" | "oldest" | "sender";
   loading: boolean;
-  hasMailbox: boolean;
+  mailboxStatus: "none" | "active" | "expired";
   development: boolean;
   onMenu(): void;
   onSearch(value: string): void;
@@ -30,14 +30,15 @@ export function InboxPanel(props: Props) {
     <header className="panel-header inbox-header">
       <button className="icon-button menu-button" onClick={props.onMenu} aria-label="Open sidebar"><Menu /></button>
       <div><span className="eyebrow">Your messages</span><h1>Inbox <em>{props.messages.filter((message) => !message.isRead).length}</em></h1></div>
-      <button className={`icon-button ${props.loading ? "spinning" : ""}`} onClick={props.onRefresh} disabled={!props.hasMailbox} aria-label="Refresh inbox"><RefreshCw /></button>
+      <button className={`icon-button ${props.loading ? "spinning" : ""}`} onClick={props.onRefresh} disabled={props.mailboxStatus !== "active"} aria-label="Refresh inbox"><RefreshCw /></button>
     </header>
     <div className="inbox-tools">
-      <label className="search-box"><Search /><input value={props.search} onChange={(event) => props.onSearch(event.target.value)} placeholder="Search mail" /></label>
-      <BeautifulSelect className="sort-select" value={props.sort} options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "sender", label: "Sender" }]} onChange={(value) => props.onSort(value as Props["sort"])} ariaLabel="Sort messages" leadingIcon={<ArrowDownUp />} minMenuWidth={145} />
+      <label className="search-box"><Search /><input disabled={props.mailboxStatus !== "active"} value={props.search} onChange={(event) => props.onSearch(event.target.value)} placeholder="Search mail" /></label>
+      <BeautifulSelect disabled={props.mailboxStatus !== "active"} className="sort-select" value={props.sort} options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "sender", label: "Sender" }]} onChange={(value) => props.onSort(value as Props["sort"])} ariaLabel="Sort messages" leadingIcon={<ArrowDownUp />} minMenuWidth={145} />
     </div>
     <div className="message-list">
-      {!props.hasMailbox ? <Empty icon={<Plus />} title="Create your first mailbox" copy="Pick an address and lifetime. No account needed." action="Create mailbox" onAction={props.onCreate} />
+      {props.mailboxStatus === "none" ? <Empty icon={<Plus />} title="Create your first mailbox" copy="Pick an address and lifetime. No account needed." action="Create mailbox" onAction={props.onCreate} />
+        : props.mailboxStatus === "expired" ? <Empty icon={<Inbox />} title="This mailbox has expired" copy="Message access has stopped. You can remove it from the sidebar while cleanup finishes." onAction={props.onCreate} />
         : !props.loading && !sorted.length ? <Empty icon={<Inbox />} title={props.search ? "No matching mail" : "Your inbox is ready"} copy={props.search ? "Try a different sender or subject." : "New messages will appear here instantly."} action={props.development && !props.search ? "Send a test message" : undefined} onAction={props.onDemo} />
         : sorted.map((message) => <button key={message.id} className={`message-row ${message.id === props.selectedId ? "selected" : ""} ${!message.isRead ? "unread" : ""}`} onClick={() => props.onSelect(message.id)}>
           <SenderAvatar logo={message.logo} name={message.senderName} />

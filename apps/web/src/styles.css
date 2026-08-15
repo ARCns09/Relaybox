@@ -58,6 +58,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .eyebrow { text-transform: uppercase; letter-spacing: 1.3px; color: var(--faint); font-size: 10px; font-weight: 750; }
 .sidebar > .eyebrow { display: flex; align-items: center; gap: 8px; margin: 0 5px 10px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(66, 214, 170, .1); }
+.status-dot.expired { background: var(--red); box-shadow: 0 0 0 4px rgba(255, 92, 110, .1); }
+.eyebrow.expired-status { color: var(--red); }
 .address-card { padding: 5px 5px 0; margin-bottom: 22px; }
 .address-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .address-row > span { min-width: 0; overflow: hidden; font-size: 17px; font-weight: 700; letter-spacing: -.35px; text-overflow: ellipsis; white-space: nowrap; }

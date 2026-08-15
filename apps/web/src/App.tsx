@@ -10,6 +10,7 @@ import { CreateMailboxModal } from "./components/CreateMailboxModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { ReplyModal } from "./components/ReplyModal";
 import { Toast } from "./components/Toast";
+import { isMailboxExpired } from "./utils";
 
 interface Health {
   mailDomain: string; mailDomains: string[]; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean;
@@ -39,12 +40,25 @@ export function App() {
 
   const active = mailboxes.find((mailbox) => mailbox.address === activeAddress);
   const credential = credentials.find((item) => item.address === activeAddress);
+  const activeExpired = Boolean(active && isMailboxExpired(active, now));
+  const activeUsable = Boolean(active && credential && !activeExpired);
+  const mailboxStatus = !active ? "none" as const : activeExpired ? "expired" as const : "active" as const;
 
   const showError = useCallback((error: unknown) => {
     const message = error instanceof ApiClientError
       ? [error.message, ...error.details].join(" ")
       : error instanceof Error ? error.message : "Something went wrong.";
     setToast({ message, tone: "error" });
+  }, []);
+
+  const removeLocalMailbox = useCallback((address: string) => {
+    setCredentials((current) => {
+      const next = current.filter((item) => item.address !== address);
+      saveCredentials(next);
+      return next;
+    });
+    setMailboxes((current) => current.filter((item) => item.address !== address));
+    setActiveAddress((current) => current === address ? "" : current);
   }, []);
 
   useEffect(() => {
@@ -62,7 +76,8 @@ export function App() {
           const result = await api.mailbox(item);
           valid.push(item); resolved.push(result.mailbox);
         } catch (error) {
-          if (!(error instanceof ApiClientError) || ![401, 404, 410].includes(error.status)) showError(error);
+          if (error instanceof ApiClientError && error.status === 410) valid.push(item);
+          else if (!(error instanceof ApiClientError) || ![401, 404].includes(error.status)) showError(error);
         }
       }));
       setMailboxes(resolved.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
@@ -75,20 +90,52 @@ export function App() {
   }, [credentials.length, showError]);
 
   const refreshInbox = useCallback(async () => {
-    if (!credential) { setMessages([]); return; }
+    if (!credential || activeExpired) { setMessages([]); return; }
     setLoadingInbox(true);
     try {
       const result = await api.messages(credential.address, credential.token);
       setMessages(result.messages);
       setMailboxes((current) => current.map((item) => item.address === result.mailbox.address ? result.mailbox : item));
-    } catch (error) { showError(error); }
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 410) {
+        setMailboxes((current) => current.map((item) => item.address === credential.address ? { ...item, isActive: false } : item));
+      } else if (error instanceof ApiClientError && [401, 404].includes(error.status)) removeLocalMailbox(credential.address);
+      else showError(error);
+    }
     finally { setLoadingInbox(false); }
-  }, [credential, showError]);
+  }, [activeExpired, credential, removeLocalMailbox, showError]);
 
   useEffect(() => {
     setSelectedId(undefined); setMessage(undefined); setMobileView("inbox"); setSearch("");
     void refreshInbox();
   }, [activeAddress, refreshInbox]);
+
+  useEffect(() => {
+    if (!activeExpired) return;
+    setMessages([]); setSelectedId(undefined); setMessage(undefined); setReplyOpen(false); setMobileView("inbox");
+  }, [activeAddress, activeExpired]);
+
+  const expiredAddresses = mailboxes.filter((mailbox) => isMailboxExpired(mailbox, now)).map((mailbox) => mailbox.address).sort().join("|");
+  useEffect(() => {
+    if (!expiredAddresses) return;
+    const addresses = expiredAddresses.split("|");
+    const reconcile = async () => {
+      await Promise.all(addresses.map(async (address) => {
+        const item = credentials.find((candidate) => candidate.address === address);
+        if (!item) return;
+        try {
+          const result = await api.mailbox(item);
+          setMailboxes((current) => current.map((mailbox) => mailbox.address === address ? result.mailbox : mailbox));
+        } catch (error) {
+          if (error instanceof ApiClientError && [401, 404].includes(error.status)) removeLocalMailbox(address);
+          // 410 means cleanup has not removed the expired row yet; keep its temporary expired state.
+        }
+      }));
+    };
+    void reconcile();
+    const timer = window.setInterval(() => void reconcile(), 5000);
+    return () => clearInterval(timer);
+  }, [credentials, expiredAddresses, removeLocalMailbox]);
 
   useEffect(() => {
     const theme = settings.theme === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : settings.theme;
@@ -110,16 +157,8 @@ export function App() {
       if (settings.sound) playNotificationSound();
     }
     if (event.type === "mailbox:expired" || event.type === "mailbox:deleted") removeLocalMailbox(activeAddress);
-  }, [activeAddress, settings.browserNotifications, settings.sound]);
-  useRealtime(activeAddress || undefined, credential?.token, realtimeHandler);
-
-  const removeLocalMailbox = useCallback((address: string) => {
-    setCredentials((current) => {
-      const next = current.filter((item) => item.address !== address); saveCredentials(next); return next;
-    });
-    setMailboxes((current) => current.filter((item) => item.address !== address));
-    setActiveAddress((current) => current === address ? credentials.find((item) => item.address !== address)?.address ?? "" : current);
-  }, [credentials]);
+  }, [activeAddress, removeLocalMailbox, settings.browserNotifications, settings.sound]);
+  useRealtime(activeUsable ? activeAddress : undefined, activeUsable ? credential?.token : undefined, realtimeHandler);
 
   const createMailbox = async (alias: string | undefined, lifetimeSeconds: number | null, domain: string) => {
     try {
@@ -134,23 +173,28 @@ export function App() {
   };
 
   const copyAddress = async () => {
-    if (!active) return;
+    if (!active || activeExpired) return;
     await navigator.clipboard.writeText(active.address);
     setCopied(true); setTimeout(() => setCopied(false), 1400);
   };
 
   const deleteMailbox = async () => {
-    if (!active || !credential || !window.confirm(`Permanently delete ${active.address} and every message in it?`)) return;
+    if (!active || !credential || !window.confirm(activeExpired ? `Remove expired mailbox ${active.address}?` : `Permanently delete ${active.address} and every message in it?`)) return;
     try {
       await api.deleteMailbox(active.address, credential.token);
       removeLocalMailbox(active.address);
       setMessages([]); setMessage(undefined); setSelectedId(undefined);
-      setToast({ message: "Mailbox permanently deleted.", tone: "success" });
-    } catch (error) { showError(error); }
+      setToast({ message: activeExpired ? "Expired mailbox removed." : "Mailbox permanently deleted.", tone: "success" });
+    } catch (error) {
+      if (activeExpired && error instanceof ApiClientError && [404, 410].includes(error.status)) {
+        removeLocalMailbox(active.address);
+        setToast({ message: "Expired mailbox removed from this device.", tone: "success" });
+      } else showError(error);
+    }
   };
 
   const openMessage = async (id: string) => {
-    if (!credential) return;
+    if (!credential || activeExpired) return;
     setSelectedId(id); setLoadingMessage(true); setMobileView("message");
     try {
       const result = await api.message(credential.address, credential.token, id);
@@ -165,7 +209,7 @@ export function App() {
   };
 
   const deleteMessage = async () => {
-    if (!credential || !selectedId || !window.confirm("Permanently delete this message?")) return;
+    if (!credential || activeExpired || !selectedId || !window.confirm("Permanently delete this message?")) return;
     try {
       await api.deleteMessage(credential.address, credential.token, selectedId);
       setMessages((current) => current.filter((item) => item.id !== selectedId));
@@ -176,7 +220,7 @@ export function App() {
   };
 
   const injectDemo = async () => {
-    if (!active) return;
+    if (!active || activeExpired) return;
     try {
       await api.inject({
         to: active.address, senderName: "Relaybox Studio", senderEmail: "hello@github.com", subject: "Your private inbox is live",
@@ -195,7 +239,7 @@ export function App() {
   };
 
   const sendReply = async (input: { to: string; subject: string; textBody: string }) => {
-    if (!credential) return;
+    if (!credential || activeExpired) return;
     try { await api.reply(credential.address, credential.token, input); setReplyOpen(false); setToast({ message: "Reply handed to your SMTP server.", tone: "success" }); }
     catch (error) { showError(error); }
   };
@@ -206,14 +250,14 @@ export function App() {
     <div className={`sidebar-scrim ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
     <Sidebar mailboxes={mailboxes} active={active} copied={copied} now={now} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
       onSelect={(address) => { setActiveAddress(address); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onDelete={deleteMailbox} onSettings={() => setSettingsOpen(true)} />
-    <InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} hasMailbox={Boolean(active)} development={health.isDevelopment}
+    <InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} mailboxStatus={mailboxStatus} development={health.isDevelopment}
       onMenu={() => setSidebarOpen(true)} onSearch={setSearch} onSort={setSort} onRefresh={refreshInbox} onSelect={openMessage} onCreate={() => setCreateOpen(true)} onDemo={injectDemo} />
     <MessageViewer message={selectedMessage} loading={loadingMessage} defaultHtml={settings.defaultHtml} blockRemoteImages={settings.blockRemoteImages}
       onBack={() => setMobileView("inbox")} onReply={() => setReplyOpen(true)} onDelete={deleteMessage}
-      onDownload={(id, filename) => credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} />
+      onDownload={(id, filename) => activeUsable && credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} />
     {createOpen && <CreateMailboxModal domains={health.mailDomains} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
     {settingsOpen && <SettingsModal value={settings} onClose={() => setSettingsOpen(false)} onSave={savePreferences} />}
-    {replyOpen && selectedMessage && active && <ReplyModal message={selectedMessage} from={active.address} onClose={() => setReplyOpen(false)} onSend={sendReply} />}
+    {replyOpen && selectedMessage && active && !activeExpired && <ReplyModal message={selectedMessage} from={active.address} onClose={() => setReplyOpen(false)} onSend={sendReply} />}
     {toast && <Toast {...toast} onClose={() => setToast(undefined)} />}
   </main>;
 }
