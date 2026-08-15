@@ -22,6 +22,9 @@ export interface SenderLogo {
   background?: string;
 }
 
+export type MessageDirection = "incoming" | "outgoing";
+export type DeliveryStatus = "received" | "sending" | "sent" | "failed";
+
 export interface MessageSummary {
   id: string;
   senderName: string;
@@ -33,6 +36,9 @@ export interface MessageSummary {
   hasAttachments: boolean;
   size: number;
   logo: SenderLogo;
+  threadId: string;
+  direction: MessageDirection;
+  deliveryStatus: DeliveryStatus;
 }
 
 export interface Attachment {
@@ -74,6 +80,7 @@ export interface InjectEmailInput {
 export type RealtimeEvent =
   | { type: "connected" }
   | { type: "message:new"; message: MessageSummary }
+  | { type: "message:sent"; message: MessageSummary }
   | { type: "mailbox:expired" }
   | { type: "mailbox:deleted" };
 

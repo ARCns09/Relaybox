@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 import type { AppConfig } from "./config.js";
 import { sanitizeEmailHtml } from "./sanitizer.js";
 
-export interface ReplyInput { to: string; subject: string; textBody: string; htmlBody?: string }
+export interface ReplyInput { to: string; subject: string; textBody: string; htmlBody?: string; replyToMessageId: string }
 export interface OutboundProvider {
   readonly configured: boolean;
   send(from: string, input: ReplyInput): Promise<string>;

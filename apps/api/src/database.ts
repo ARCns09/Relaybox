@@ -16,6 +16,7 @@ interface MessageRow {
   id: string; mailbox_id: string; message_id: string; sender_name: string; sender_email: string;
   recipients: string; subject: string; text_body: string; html_body: string | null; received_at: string;
   is_read: number; has_attachments: number; size: number; cc: string; reply_to: string; headers: string;
+  thread_id: string; direction: "incoming" | "outgoing"; delivery_status: "received" | "sent";
 }
 
 interface AttachmentRow { id: string; message_id: string; filename: string; mime_type: string; size: number; storage_path: string }
@@ -36,6 +37,10 @@ export interface NewMessageRecord {
   size: number;
   attachments: Array<{ filename: string; mimeType: string; size: number; storagePath: string }>;
   provider?: { name: string; messageId: string };
+  threadId?: string;
+  direction?: "incoming" | "outgoing";
+  deliveryStatus?: "received" | "sent";
+  isRead?: boolean;
 }
 
 export class MailDatabase {
@@ -100,6 +105,15 @@ export class MailDatabase {
     this.addColumnIfMissing("messages", "cc", "TEXT NOT NULL DEFAULT '[]'");
     this.addColumnIfMissing("messages", "reply_to", "TEXT NOT NULL DEFAULT '[]'");
     this.addColumnIfMissing("messages", "headers", "TEXT NOT NULL DEFAULT '{}'");
+    this.addColumnIfMissing("messages", "thread_id", "TEXT NOT NULL DEFAULT ''");
+    this.addColumnIfMissing("messages", "direction", "TEXT NOT NULL DEFAULT 'incoming'");
+    this.addColumnIfMissing("messages", "delivery_status", "TEXT NOT NULL DEFAULT 'received'");
+    const unthreaded = this.connection.prepare("SELECT id, subject, sender_email, recipients, direction FROM messages WHERE thread_id = ''").all() as unknown as MessageRow[];
+    const setThread = this.connection.prepare("UPDATE messages SET thread_id = ? WHERE id = ?");
+    for (const row of unthreaded) {
+      const correspondent = row.direction === "outgoing" ? (JSON.parse(row.recipients) as string[])[0] ?? row.sender_email : row.sender_email;
+      setThread.run(fallbackThreadId(row.subject, correspondent), row.id);
+    }
     this.connection.exec(`
       CREATE TABLE IF NOT EXISTS provider_messages (
         provider TEXT NOT NULL,
@@ -183,9 +197,9 @@ export class MailDatabase {
     const orders = { newest: "received_at DESC", oldest: "received_at ASC", sender: "sender_name COLLATE NOCASE ASC" } as const;
     const query = search.trim();
     const rows = (query
-      ? this.connection.prepare(`SELECT * FROM messages WHERE mailbox_id = ? AND (subject LIKE ? OR sender_name LIKE ? OR sender_email LIKE ? OR text_body LIKE ?) ORDER BY ${orders[sort]}`)
+      ? this.connection.prepare(`SELECT * FROM messages WHERE mailbox_id = ? AND direction = 'incoming' AND (subject LIKE ? OR sender_name LIKE ? OR sender_email LIKE ? OR text_body LIKE ?) ORDER BY ${orders[sort]}`)
           .all(mailboxId, ...Array(4).fill(`%${query}%`))
-      : this.connection.prepare(`SELECT * FROM messages WHERE mailbox_id = ? ORDER BY ${orders[sort]}`).all(mailboxId)) as unknown as MessageRow[];
+      : this.connection.prepare(`SELECT * FROM messages WHERE mailbox_id = ? AND direction = 'incoming' ORDER BY ${orders[sort]}`).all(mailboxId)) as unknown as MessageRow[];
     return rows.map((row) => this.messageSummary(row));
   }
 
@@ -201,6 +215,9 @@ export class MailDatabase {
       hasAttachments: Boolean(row.has_attachments),
       size: row.size,
       logo: this.logos.resolve(row.sender_email),
+      threadId: row.thread_id,
+      direction: row.direction,
+      deliveryStatus: row.delivery_status,
     };
   }
 
@@ -224,16 +241,35 @@ export class MailDatabase {
     };
   }
 
+  getThread(mailboxId: string, messageId: string): Message[] {
+    const selected = this.connection.prepare("SELECT thread_id FROM messages WHERE id = ? AND mailbox_id = ?").get(messageId, mailboxId) as { thread_id: string } | undefined;
+    if (!selected) return [];
+    const rows = this.connection.prepare("SELECT id FROM messages WHERE mailbox_id = ? AND thread_id = ? ORDER BY received_at ASC, id ASC")
+      .all(mailboxId, selected.thread_id) as unknown as Array<{ id: string }>;
+    return rows.map((row) => this.getMessage(mailboxId, row.id)!).filter(Boolean);
+  }
+
+  resolveThreadId(mailboxId: string, subject: string, correspondent: string, headers: Record<string, string>): string {
+    const references = `${headers["in-reply-to"] ?? ""} ${headers.references ?? ""}`.match(/<[^<>]+>/g) ?? [];
+    for (const reference of references.reverse()) {
+      const parent = this.connection.prepare("SELECT thread_id FROM messages WHERE mailbox_id = ? AND message_id = ?")
+        .get(mailboxId, reference) as { thread_id: string } | undefined;
+      if (parent?.thread_id) return parent.thread_id;
+    }
+    return fallbackThreadId(subject, correspondent);
+  }
+
   insertMessage(record: NewMessageRecord): MessageSummary {
     const id = randomUUID();
     this.connection.exec("BEGIN IMMEDIATE");
     try {
       this.connection.prepare(`
-        INSERT INTO messages (id, mailbox_id, message_id, sender_name, sender_email, recipients, cc, reply_to, headers, subject, text_body, html_body, received_at, has_attachments, size)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, mailbox_id, message_id, sender_name, sender_email, recipients, cc, reply_to, headers, subject, text_body, html_body, received_at, is_read, has_attachments, size, thread_id, direction, delivery_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, record.mailboxId, record.messageId, record.senderName, record.senderEmail, JSON.stringify(record.recipients),
         JSON.stringify(record.cc), JSON.stringify(record.replyTo), JSON.stringify(record.headers), record.subject, record.textBody, record.htmlBody,
-        record.receivedAt, record.attachments.length ? 1 : 0, record.size);
+        record.receivedAt, record.isRead ? 1 : 0, record.attachments.length ? 1 : 0, record.size,
+        record.threadId ?? fallbackThreadId(record.subject, record.senderEmail), record.direction ?? "incoming", record.deliveryStatus ?? "received");
       const insertAttachment = this.connection.prepare("INSERT INTO attachments (id, message_id, filename, mime_type, size, storage_path) VALUES (?, ?, ?, ?, ?, ?)");
       for (const attachment of record.attachments) {
         insertAttachment.run(randomUUID(), id, attachment.filename, attachment.mimeType, attachment.size, attachment.storagePath);
@@ -293,4 +329,9 @@ export class MailDatabase {
       .all(now.toISOString()) as unknown as Array<{ id: string }>;
     return rows.map((row) => row.id);
   }
+}
+
+function fallbackThreadId(subject: string, correspondent: string): string {
+  const normalizedSubject = subject.trim().toLowerCase().replace(/^\s*((re|fw|fwd)\s*:\s*)+/i, "").replace(/\s+/g, " ") || "(no subject)";
+  return JSON.stringify([normalizedSubject, correspondent.trim().toLowerCase()]);
 }

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
 import type { ResendInboundClient } from "./providers/resend-client.js";
+import type { OutboundProvider } from "./outbound.js";
 
 describe("Relaybox API", () => {
   let directory: string;
@@ -106,6 +107,36 @@ describe("Relaybox API", () => {
     expect(marked.json().message.isRead).toBe(true);
   });
 
+  it("groups replies into a thread and persists successful outbound messages", async () => {
+    await app.close();
+    const outboundProvider: OutboundProvider = {
+      configured: true,
+      send: vi.fn(async () => "<sent-reply@mail.test>"),
+    };
+    app = await buildApp({
+      nodeEnv: "test", isDevelopment: true, databasePath: join(directory, "threads.db"), attachmentStoragePath: join(directory, "thread-files"),
+      mailDomain: "mail.test", storageLimitBytes: 1024 * 1024, maxMessageBytes: 512 * 1024, maxAttachmentBytes: 128 * 1024,
+    }, { outboundProvider });
+    const created = await create("thread-box");
+    const received = await app.inject({ method: "POST", url: "/api/dev/inject-email", payload: {
+      to: created.mailbox.address, senderName: "Alice", senderEmail: "alice@example.com", subject: "Project update", textBody: "First message",
+    } });
+    const receivedId = received.json().message.id as string;
+    const headers = { authorization: `Bearer ${created.token}` };
+    const sent = await app.inject({ method: "POST", url: `/api/mailboxes/${created.mailbox.address}/reply`, headers, payload: {
+      to: "alice@example.com", subject: "Re: Project update", textBody: "Thanks Alice", replyToMessageId: receivedId,
+    } });
+    expect(sent.statusCode).toBe(201);
+    expect(sent.json().message).toMatchObject({ direction: "outgoing", deliveryStatus: "sent", textBody: "Thanks Alice" });
+    const conversation = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}/messages/${receivedId}/thread`, headers });
+    expect(conversation.statusCode).toBe(200);
+    expect(conversation.json().thread.map((message: { direction: string }) => message.direction)).toEqual(["incoming", "outgoing"]);
+    expect(conversation.json().thread[0].threadId).toBe(conversation.json().thread[1].threadId);
+    expect(outboundProvider.send).toHaveBeenCalledOnce();
+    const inbox = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}/messages`, headers });
+    expect(inbox.json().messages).toHaveLength(1);
+  });
+
   it("rejects delivery to an expired mailbox", async () => {
     const created = await create();
     app.appContext.db.connection.prepare("UPDATE mailboxes SET expires_at = ? WHERE id = ?").run(new Date(Date.now() - 1000).toISOString(), created.mailbox.id);
@@ -117,6 +148,9 @@ describe("Relaybox API", () => {
 
   it("exposes expired status without message access and permits immediate cleanup", async () => {
     const created = await create("expired-status");
+    const received = await app.inject({ method: "POST", url: "/api/dev/inject-email", payload: {
+      to: created.mailbox.address, senderEmail: "sender@example.com", subject: "Before expiry", textBody: "Still active",
+    } });
     app.appContext.db.connection.prepare("UPDATE mailboxes SET expires_at = ? WHERE id = ?").run(new Date(Date.now() - 1000).toISOString(), created.mailbox.id);
     const headers = { authorization: `Bearer ${created.token}` };
     const status = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}`, headers });
@@ -124,6 +158,10 @@ describe("Relaybox API", () => {
     expect(status.json().mailbox.isActive).toBe(false);
     const messages = await app.inject({ method: "GET", url: `/api/mailboxes/${created.mailbox.address}/messages`, headers });
     expect(messages.statusCode).toBe(410);
+    const reply = await app.inject({ method: "POST", url: `/api/mailboxes/${created.mailbox.address}/reply`, headers, payload: {
+      to: "sender@example.com", subject: "Re: Before expiry", textBody: "Too late", replyToMessageId: received.json().message.id,
+    } });
+    expect(reply.statusCode).toBe(410);
     const removed = await app.inject({ method: "DELETE", url: `/api/mailboxes/${created.mailbox.address}`, headers });
     expect(removed.statusCode).toBe(204);
     expect((await create("expired-status")).mailbox.address).toBe(created.mailbox.address);

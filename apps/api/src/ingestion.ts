@@ -73,6 +73,7 @@ export class IngestionService {
         cc: (input.cc ?? []).map((address) => address.toLowerCase()),
         replyTo: (input.replyTo ?? []).map((address) => address.toLowerCase()),
         headers,
+        threadId: this.db.resolveThreadId(mailboxRow.id, input.subject?.trim() || "(No subject)", input.senderEmail, headers),
         subject: input.subject?.trim() || "(No subject)",
         textBody,
         htmlBody,

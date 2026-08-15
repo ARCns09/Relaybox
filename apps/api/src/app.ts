@@ -9,9 +9,10 @@ import { createAccessToken, generateAlias, hashToken, normalizeAlias, tokenMatch
 import { LocalAttachmentStorage } from "./storage.js";
 import { RealtimeHub } from "./realtime.js";
 import { IngestionError, IngestionService } from "./ingestion.js";
-import { OutboundError, OutboundService, type ReplyInput } from "./outbound.js";
+import { OutboundError, OutboundService, type OutboundProvider, type ReplyInput } from "./outbound.js";
 import { OfficialResendInboundClient, type ResendInboundClient } from "./providers/resend-client.js";
 import { ResendInboundAdapter, type AttachmentDownloader } from "./providers/resend-inbound.js";
+import { sanitizeEmailHtml } from "./sanitizer.js";
 
 interface AddressParams { address: string }
 interface MessageParams extends AddressParams { messageId: string }
@@ -31,6 +32,7 @@ export interface AppContext {
 export interface AppDependencies {
   resendClient?: ResendInboundClient;
   attachmentDownloader?: AttachmentDownloader;
+  outboundProvider?: OutboundProvider;
 }
 
 export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies: AppDependencies = {}): Promise<FastifyInstance & { appContext: AppContext }> {
@@ -43,7 +45,7 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies:
   const storage = new LocalAttachmentStorage(config.attachmentStoragePath);
   const realtime = new RealtimeHub();
   const ingestion = new IngestionService(config, db, storage, realtime);
-  const outbound = new OutboundService(config);
+  const outbound = new OutboundService(config, dependencies.outboundProvider);
   const resendClient = config.resendInboundEnabled
     ? dependencies.resendClient ?? new OfficialResendInboundClient(config.resendApiKey)
     : undefined;
@@ -135,6 +137,13 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies:
     return { message };
   });
 
+  app.get<{ Params: MessageParams }>("/api/mailboxes/:address/messages/:messageId/thread", async (request) => {
+    const row = authenticate(request);
+    const thread = db.getThread(row.id, request.params.messageId);
+    if (!thread.length) throw new HttpError(404, "Conversation not found.");
+    return { thread };
+  });
+
   app.patch<{ Params: MessageParams; Body: { isRead: boolean } }>("/api/mailboxes/:address/messages/:messageId", async (request) => {
     const row = authenticate(request);
     const message = db.markRead(row.id, request.params.messageId, Boolean(request.body?.isRead));
@@ -169,8 +178,39 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, dependencies:
     config: { rateLimit: { max: 10, timeWindow: "1 hour" } },
   }, async (request, reply) => {
     const row = authenticate(request);
-    const messageId = await outbound.send(row.address, request.body);
-    return reply.status(202).send({ messageId });
+    const original = db.getMessage(row.id, request.body?.replyToMessageId ?? "");
+    if (!original) throw new HttpError(404, "The message being replied to was not found.");
+    const to = request.body?.to?.trim().toLowerCase();
+    const allowedRecipients = new Set([original.senderEmail, ...original.replyTo].map((address) => address.toLowerCase()));
+    if (!to || !allowedRecipients.has(to)) throw new HttpError(400, "Replies must be sent to the original sender or Reply-To address.");
+    const textBody = request.body.textBody ?? "";
+    const htmlBody = request.body.htmlBody;
+    const safeHtmlBody = htmlBody ? sanitizeEmailHtml(htmlBody, false) : undefined;
+    const size = Buffer.byteLength(textBody) + Buffer.byteLength(safeHtmlBody ?? "");
+    if (row.storage_used + size > config.storageLimitBytes) throw new HttpError(413, "Mailbox storage quota exceeded.");
+    const messageId = await outbound.send(row.address, { ...request.body, ...(safeHtmlBody ? { htmlBody: safeHtmlBody } : {}) });
+    const summary = db.insertMessage({
+      mailboxId: row.id,
+      messageId,
+      senderName: row.alias,
+      senderEmail: row.address,
+      recipients: [to],
+      cc: [],
+      replyTo: [],
+      headers: { "in-reply-to": original.messageId },
+      subject: (request.body.subject?.trim() || `Re: ${original.subject}`).slice(0, 240),
+      textBody,
+      htmlBody: safeHtmlBody ?? null,
+      receivedAt: new Date().toISOString(),
+      size,
+      attachments: [],
+      threadId: original.threadId,
+      direction: "outgoing",
+      deliveryStatus: "sent",
+      isRead: true,
+    });
+    realtime.publish(row.id, { type: "message:sent", message: summary });
+    return reply.status(201).send({ message: db.getMessage(row.id, summary.id) });
   });
 
   app.get<{ Params: AddressParams }>("/api/mailboxes/:address/events", async (request, reply) => {
