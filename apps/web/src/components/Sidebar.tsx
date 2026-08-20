@@ -1,5 +1,6 @@
-import { Check, Clock3, Copy, Inbox, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, Clock3, Copy, Inbox, LayoutDashboard, LogOut, Mail, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Mailbox } from "@relaybox/shared";
+import type { PlatformUser } from "../platform";
 import { Brand } from "./Brand";
 import { configuredLifetimeLabel, expiryProgress, formatBytes, isMailboxExpired, lifetimeLabel } from "../utils";
 import { BeautifulSelect } from "./BeautifulSelect";
@@ -10,15 +11,20 @@ interface Props {
   copied: boolean;
   now: number;
   open: boolean;
+  user?: PlatformUser;
+  view?: "mail" | "admin";
   onClose(): void;
   onSelect(address: string): void;
   onCopy(): void;
   onCreate(): void;
   onDelete(): void;
   onSettings(): void;
+  onMail?(): void;
+  onAdmin?(): void;
+  onLogout?(): void;
 }
 
-export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelect, onCopy, onCreate, onDelete, onSettings }: Props) {
+export function Sidebar({ mailboxes, active, copied, now, open, user, view = "mail", onClose, onSelect, onCopy, onCreate, onDelete, onSettings, onMail, onAdmin, onLogout }: Props) {
   const expired = active ? isMailboxExpired(active, now) : false;
   const activeCount = mailboxes.filter((mailbox) => !isMailboxExpired(mailbox, now)).length;
   return <aside className={`sidebar ${open ? "is-open" : ""}`}>
@@ -58,8 +64,21 @@ export function Sidebar({ mailboxes, active, copied, now, open, onClose, onSelec
     <div className="sidebar-bottom">
       <div className="active-count"><span>{activeCount}</span><p>Active mailboxes<small>{mailboxes.length - activeCount ? `${mailboxes.length - activeCount} expired · ` : ""}Stored on this device</small></p></div>
       <button className="primary wide" onClick={onCreate}><Plus /> Create mailbox</button>
-      <button className="settings-button" onClick={onSettings}><Settings /> Settings</button>
-      <p className="privacy-note"><ShieldCheck /> Private by design · no tracking</p>
+      {user && <>
+        <nav className="account-navigation" aria-label="Account navigation">
+          <button className={view === "mail" ? "active" : ""} onClick={onMail}><Mail /> Mail</button>
+          {user.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={onAdmin}><LayoutDashboard /> Admin</button>}
+          <button onClick={onSettings}><Settings /> Settings</button>
+        </nav>
+        {user.mailboxType === "admin" && user.primaryMailbox && <div className="primary-mailbox-note"><ShieldCheck /><span><strong>Protected mailbox</strong><small>{user.primaryMailbox}</small></span></div>}
+        <div className="account-card"><span className="account-avatar">{accountInitials(user)}</span><span><strong>{user.displayName || user.email.split("@")[0]}</strong><small>{user.email}</small></span><em>{user.role}</em><button onClick={onLogout} title="Sign out" aria-label="Sign out"><LogOut /></button></div>
+      </>}
+      {!user && <button className="settings-button" onClick={onSettings}><Settings /> Settings</button>}
+      <p className="privacy-note"><ShieldCheck /> Private by invitation · no tracking</p>
     </div>
   </aside>;
+}
+
+function accountInitials(user: PlatformUser): string {
+  return (user.displayName || user.email).split(/[\s@]+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }

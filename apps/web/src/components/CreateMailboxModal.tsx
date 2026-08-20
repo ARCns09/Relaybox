@@ -13,7 +13,7 @@ export function CreateMailboxModal({ domains, defaultLifetime, onClose, onCreate
   const [customValue, setCustomValue] = useState(2);
   const [customUnit, setCustomUnit] = useState<"minutes" | "hours" | "days" | "years">("hours");
   const [busy, setBusy] = useState(false);
-  const [domain, setDomain] = useState(domains[0] ?? "mail.example.com");
+  const [domain, setDomain] = useState(domains[0] ?? "");
   const safeAlias = alias.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 63);
   const actualLifetime = useMemo(() => lifetime === "custom" ? customValue * ({ minutes: 60, hours: 3600, days: 86400, years: 31536000 }[customUnit]) : lifetime, [lifetime, customValue, customUnit]);
   const changeCustomUnit = (unit: typeof customUnit) => {
@@ -34,7 +34,7 @@ export function CreateMailboxModal({ domains, defaultLifetime, onClose, onCreate
         {mode === "random" ? <span className="random-placeholder">A memorable alias will be generated</span> : <input autoFocus value={safeAlias} onChange={(event) => setAlias(event.target.value)} placeholder="your-alias" />}
         {domains.length > 1
           ? <BeautifulSelect className="domain-select" value={domain} options={domains.map((item) => ({ value: item, label: `@${item}` }))} onChange={setDomain} ariaLabel="Mailbox domain" minMenuWidth={210} />
-          : <b>@{domain}</b>}
+          : <b>{domain ? `@${domain}` : "No public domain available"}</b>}
       </div></label>
       <fieldset className="lifetime-grid"><legend><Clock3 /> Mailbox lifetime</legend>
         {LIFETIME_OPTIONS.map((option) => <button key={String(option.value)} className={lifetime === option.value ? "active" : ""} onClick={() => setLifetime(option.value)}>{option.label}{lifetime === option.value && <Check />}</button>)}
@@ -43,6 +43,6 @@ export function CreateMailboxModal({ domains, defaultLifetime, onClose, onCreate
       {lifetime === "custom" && <div className="custom-duration"><input type="number" min={customUnit === "minutes" ? 5 : 1} max={customUnit === "years" ? 100 : customUnit === "days" ? 36500 : customUnit === "hours" ? 876000 : 52560000} value={customValue} onChange={(event) => setCustomValue(Math.max(customUnit === "minutes" ? 5 : 1, Number(event.target.value)))} /><BeautifulSelect value={customUnit} options={[{ value: "minutes", label: "Minutes" }, { value: "hours", label: "Hours" }, { value: "days", label: "Days" }, { value: "years", label: "Years" }]} onChange={(value) => changeCustomUnit(value as typeof customUnit)} ariaLabel="Custom lifetime unit" /></div>}
       <div className="privacy-callout"><ShieldCheck /><p><strong>Unlisted and private</strong><span>Knowing the address alone never grants inbox access.</span></p></div>
     </div>
-    <footer className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || (mode === "custom" && safeAlias.length < 2)} onClick={submit}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Create mailbox</button></footer>
+    <footer className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !domain || (mode === "custom" && safeAlias.length < 2)} onClick={submit}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Create mailbox</button></footer>
   </Modal>;
 }

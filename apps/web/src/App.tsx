@@ -9,13 +9,41 @@ import { MessageViewer } from "./components/MessageViewer";
 import { CreateMailboxModal } from "./components/CreateMailboxModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { Toast } from "./components/Toast";
+import { LoginPage } from "./components/LoginPage";
+import { AdminDashboard } from "./components/AdminDashboard";
+import { loadPlatformState, loadPreviewSession, savePlatformState, savePreviewSession, type PlatformState, type PlatformUser } from "./platform";
 import { isMailboxExpired } from "./utils";
 
 interface Health {
-  mailDomain: string; mailDomains: string[]; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean;
+  mailDomain: string; mailDomains: string[]; publicMailboxDomains?: string[]; reservedMailboxes?: string[]; defaultLifetime: number; storageLimit: number; outboundConfigured: boolean; isDevelopment: boolean;
 }
 
 export function App() {
+  const [platform, setPlatform] = useState<PlatformState>(loadPlatformState);
+  const [sessionUserId, setSessionUserId] = useState<string | undefined>(loadPreviewSession);
+  const currentUser = platform.users.find((user) => user.id === sessionUserId && user.status === "active");
+
+  useEffect(() => savePlatformState(platform), [platform]);
+
+  const login = async (email: string, password: string) => {
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    const user = platform.users.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase());
+    if (!user) throw new Error("This account has not been invited to Relaybox.");
+    if (user.status !== "active") throw new Error("This account is disabled. Contact the administrator.");
+    if (!password) throw new Error("Enter your password.");
+    savePreviewSession(user.id);
+    setSessionUserId(user.id);
+  };
+
+  if (!currentUser) return <LoginPage users={platform.users} onLogin={login} />;
+
+  return <MailboxWorkspace currentUser={currentUser} platform={platform} onPlatformChange={setPlatform} onLogout={() => {
+    savePreviewSession(undefined);
+    setSessionUserId(undefined);
+  }} />;
+}
+
+function MailboxWorkspace({ currentUser, platform, onPlatformChange, onLogout }: { currentUser: PlatformUser; platform: PlatformState; onPlatformChange(state: PlatformState): void; onLogout(): void }) {
   const [credentials, setCredentials] = useState<StoredCredential[]>(loadCredentials);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [activeAddress, setActiveAddress] = useState(() => loadCredentials()[0]?.address ?? "");
@@ -35,6 +63,7 @@ export function App() {
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" }>();
+  const [workspaceView, setWorkspaceView] = useState<"mail" | "admin">("mail");
 
   const active = mailboxes.find((mailbox) => mailbox.address === activeAddress);
   const credential = credentials.find((item) => item.address === activeAddress);
@@ -279,17 +308,31 @@ export function App() {
     } catch { /* The failed bubble and toast already expose the retryable error. */ }
   };
 
-  return <main className="app-shell" data-mobile-view={mobileView}>
+  const publicCreationDomains = (() => {
+    const reservedDomains = new Set(platform.domains.filter((domain) => domain.visibility === "reserved" || !domain.allowMailboxCreation).map((domain) => domain.domain));
+    const candidates = health.publicMailboxDomains?.length ? health.publicMailboxDomains : health.mailDomains;
+    return candidates.filter((domain) => !reservedDomains.has(domain));
+  })();
+
+  const updateCurrentUser = (updater: (user: PlatformUser) => PlatformUser) => {
+    onPlatformChange({ ...platform, users: platform.users.map((user) => user.id === currentUser.id ? updater(user) : user) });
+  };
+
+  return <main className={`app-shell ${workspaceView === "admin" ? "admin-app-shell" : ""}`} data-mobile-view={mobileView}>
     <div className={`sidebar-scrim ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
     <Sidebar mailboxes={mailboxes} active={active} copied={copied} now={now} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
-      onSelect={(address) => { setActiveAddress(address); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onDelete={deleteMailbox} onSettings={() => setSettingsOpen(true)} />
-    <InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} mailboxStatus={mailboxStatus} development={health.isDevelopment}
+      user={currentUser} view={workspaceView} onMail={() => { setWorkspaceView("mail"); setSidebarOpen(false); }} onAdmin={() => { setWorkspaceView("admin"); setSidebarOpen(false); }} onLogout={onLogout}
+      onSelect={(address) => { setActiveAddress(address); setWorkspaceView("mail"); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onDelete={deleteMailbox} onSettings={() => setSettingsOpen(true)} />
+    {workspaceView === "admin" && currentUser.role === "admin" ? <AdminDashboard currentUser={currentUser} state={platform} onChange={onPlatformChange} onBackToInbox={() => setWorkspaceView("mail")} onMenu={() => setSidebarOpen(true)} onToast={(message, tone = "success") => setToast({ message, tone })} /> : <><InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} mailboxStatus={mailboxStatus} development={health.isDevelopment}
       onMenu={() => setSidebarOpen(true)} onSearch={setSearch} onSort={setSort} onRefresh={refreshInbox} onSelect={openMessage} onCreate={() => setCreateOpen(true)} onDemo={injectDemo} />
     <MessageViewer thread={thread} selectedId={selectedId} mailbox={active} loading={loadingMessage} defaultHtml={settings.defaultHtml} blockRemoteImages={settings.blockRemoteImages}
       expired={activeExpired} outboundConfigured={health.outboundConfigured} onBack={() => setMobileView("inbox")} onDelete={deleteMessage} onSend={sendReply} onRetry={retryReply}
-      onDownload={(id, filename) => activeUsable && credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} />
-    {createOpen && <CreateMailboxModal domains={health.mailDomains} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
-    {settingsOpen && <SettingsModal value={settings} onClose={() => setSettingsOpen(false)} onSave={savePreferences} />}
+      onDownload={(id, filename) => activeUsable && credential && void downloadAttachment(credential.address, credential.token, id, filename).catch(showError)} /></>}
+    {createOpen && <CreateMailboxModal domains={publicCreationDomains} defaultLifetime={settings.defaultLifetime} onClose={() => setCreateOpen(false)} onCreate={createMailbox} />}
+    {settingsOpen && <SettingsModal value={settings} user={currentUser} onClose={() => setSettingsOpen(false)} onSave={savePreferences}
+      onProfile={(displayName) => { updateCurrentUser((user) => ({ ...user, displayName })); setToast({ message: "Profile updated in this frontend preview.", tone: "success" }); }}
+      onChangePassword={() => setToast({ message: "Password change is ready for the future account API.", tone: "success" })}
+      onOpenAdmin={currentUser.role === "admin" ? () => { setSettingsOpen(false); setWorkspaceView("admin"); } : undefined} />}
     {toast && <Toast {...toast} onClose={() => setToast(undefined)} />}
   </main>;
 }
