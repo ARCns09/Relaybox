@@ -11,6 +11,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { Toast } from "./components/Toast";
 import { LoginPage } from "./components/LoginPage";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { DomainDirectory } from "./components/DomainDirectory";
 import { loadPlatformState, loadPreviewSession, savePlatformState, savePreviewSession, type PlatformState, type PlatformUser } from "./platform";
 import { isMailboxExpired } from "./utils";
 
@@ -63,7 +64,7 @@ function MailboxWorkspace({ currentUser, platform, onPlatformChange, onLogout }:
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" }>();
-  const [workspaceView, setWorkspaceView] = useState<"mail" | "admin">("mail");
+  const [workspaceView, setWorkspaceView] = useState<"mail" | "domains" | "admin">("mail");
 
   const active = mailboxes.find((mailbox) => mailbox.address === activeAddress);
   const credential = credentials.find((item) => item.address === activeAddress);
@@ -309,21 +310,21 @@ function MailboxWorkspace({ currentUser, platform, onPlatformChange, onLogout }:
   };
 
   const publicCreationDomains = (() => {
-    const reservedDomains = new Set(platform.domains.filter((domain) => domain.visibility === "reserved" || !domain.allowMailboxCreation).map((domain) => domain.domain));
+    const unavailableDomains = new Set(platform.domains.filter((domain) => domain.visibility === "reserved" || domain.status !== "active" || !domain.allowMailboxCreation).map((domain) => domain.domain));
     const candidates = health.publicMailboxDomains?.length ? health.publicMailboxDomains : health.mailDomains;
-    return candidates.filter((domain) => !reservedDomains.has(domain));
+    return candidates.filter((domain) => !unavailableDomains.has(domain));
   })();
 
   const updateCurrentUser = (updater: (user: PlatformUser) => PlatformUser) => {
     onPlatformChange({ ...platform, users: platform.users.map((user) => user.id === currentUser.id ? updater(user) : user) });
   };
 
-  return <main className={`app-shell ${workspaceView === "admin" ? "admin-app-shell" : ""}`} data-mobile-view={mobileView}>
+  return <main className={`app-shell ${workspaceView !== "mail" ? "admin-app-shell" : ""}`} data-mobile-view={mobileView}>
     <div className={`sidebar-scrim ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
     <Sidebar mailboxes={mailboxes} active={active} copied={copied} now={now} open={sidebarOpen} onClose={() => setSidebarOpen(false)}
-      user={currentUser} view={workspaceView} onMail={() => { setWorkspaceView("mail"); setSidebarOpen(false); }} onAdmin={() => { setWorkspaceView("admin"); setSidebarOpen(false); }} onLogout={onLogout}
+      user={currentUser} view={workspaceView} onMail={() => { setWorkspaceView("mail"); setSidebarOpen(false); }} onDomains={() => { setWorkspaceView("domains"); setSidebarOpen(false); }} onAdmin={() => { setWorkspaceView("admin"); setSidebarOpen(false); }} onLogout={onLogout}
       onSelect={(address) => { setActiveAddress(address); setWorkspaceView("mail"); setSidebarOpen(false); }} onCopy={copyAddress} onCreate={() => setCreateOpen(true)} onDelete={deleteMailbox} onSettings={() => setSettingsOpen(true)} />
-    {workspaceView === "admin" && currentUser.role === "admin" ? <AdminDashboard currentUser={currentUser} state={platform} onChange={onPlatformChange} onBackToInbox={() => setWorkspaceView("mail")} onMenu={() => setSidebarOpen(true)} onToast={(message, tone = "success") => setToast({ message, tone })} /> : <><InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} mailboxStatus={mailboxStatus} development={health.isDevelopment}
+    {workspaceView === "admin" && currentUser.role === "admin" ? <AdminDashboard currentUser={currentUser} state={platform} onChange={onPlatformChange} onBackToInbox={() => setWorkspaceView("mail")} onMenu={() => setSidebarOpen(true)} onToast={(message, tone = "success") => setToast({ message, tone })} /> : workspaceView === "domains" ? <DomainDirectory domains={platform.domains} onBackToInbox={() => setWorkspaceView("mail")} onMenu={() => setSidebarOpen(true)} /> : <><InboxPanel messages={messages} selectedId={selectedId} search={search} sort={sort} loading={loadingInbox} mailboxStatus={mailboxStatus} development={health.isDevelopment}
       onMenu={() => setSidebarOpen(true)} onSearch={setSearch} onSort={setSort} onRefresh={refreshInbox} onSelect={openMessage} onCreate={() => setCreateOpen(true)} onDemo={injectDemo} />
     <MessageViewer thread={thread} selectedId={selectedId} mailbox={active} loading={loadingMessage} defaultHtml={settings.defaultHtml} blockRemoteImages={settings.blockRemoteImages}
       expired={activeExpired} outboundConfigured={health.outboundConfigured} onBack={() => setMobileView("inbox")} onDelete={deleteMessage} onSend={sendReply} onRetry={retryReply}

@@ -1,10 +1,11 @@
 import { Activity, ArrowLeft, Ban, Check, Copy, Database, Gauge, Globe2, HardDrive, KeyRound, Mailbox, Menu, MoreHorizontal, Plus, Search, ShieldCheck, Trash2, UserCheck, Users, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { OneTimeCredentials, PlatformState, PlatformUser } from "../platform";
+import type { DomainCapability, DomainStatus, OneTimeCredentials, PlatformState, PlatformUser } from "../platform";
 import { generateTemporaryPassword, platformStorageStats } from "../platform";
 import { formatBytes, fullDate } from "../utils";
 import { BeautifulSelect } from "./BeautifulSelect";
 import { Modal } from "./Modal";
+import { DomainCard } from "./DomainDirectory";
 
 interface Props {
   currentUser: PlatformUser;
@@ -24,6 +25,7 @@ export function AdminDashboard({ currentUser, state, onChange, onBackToInbox, on
   const [quotaUser, setQuotaUser] = useState<PlatformUser>();
   const [inspectUser, setInspectUser] = useState<PlatformUser>();
   const [credentials, setCredentials] = useState<OneTimeCredentials>();
+  const [domainOpen, setDomainOpen] = useState(false);
   const stats = platformStorageStats(state);
   const members = state.users.filter((user) => user.role === "member");
   const visibleUsers = state.users.filter((user) => `${user.displayName ?? ""} ${user.email}`.toLowerCase().includes(search.toLowerCase()));
@@ -50,12 +52,16 @@ export function AdminDashboard({ currentUser, state, onChange, onBackToInbox, on
     setCredentials({ email: user.email, temporaryPassword: generateTemporaryPassword(), quotaBytes: user.quotaBytes });
   };
 
+  const updateDomain = (name: string, updater: (domain: DomainCapability) => DomainCapability) => {
+    onChange({ ...state, domains: state.domains.map((domain) => domain.domain === name ? updater(domain) : domain) });
+  };
+
   return <section className="admin-workspace">
     <header className="admin-topbar">
       <button className="icon-button admin-menu" onClick={onMenu} aria-label="Open navigation"><Menu /></button>
       <div><span className="eyebrow">Administration</span><h1>{tab === "overview" ? "Service overview" : tab === "users" ? "Users & storage" : "Domain capabilities"}</h1></div>
       <button className="secondary" onClick={onBackToInbox}><ArrowLeft /> Back to inbox</button>
-      <button className="primary" onClick={() => setInviteOpen(true)}><Plus /> Invite member</button>
+      <button className="primary" onClick={() => tab === "domains" ? setDomainOpen(true) : setInviteOpen(true)}><Plus /> {tab === "domains" ? "Add domain" : "Invite member"}</button>
     </header>
     <nav className="admin-tabs" aria-label="Admin sections">
       <button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}><Gauge /> Overview</button>
@@ -103,19 +109,39 @@ export function AdminDashboard({ currentUser, state, onChange, onBackToInbox, on
         </div>
       </section>}
 
-      {tab === "domains" && <section className="domain-grid">{state.domains.map((domain) => <article className={`admin-card domain-card ${domain.visibility}`} key={domain.domain}>
-        <header><span className="domain-icon"><Globe2 /></span><StatusBadge status={domain.status === "active" ? "active" : "disabled"} label={domain.status} /></header>
-        <h2>{domain.domain}</h2><p>{domain.visibility === "public" ? "Available to invited members when exposed by server capabilities." : "Private administrative domain. Never included in public mailbox selectors."}</p>
-        <dl><div><dt>Visibility</dt><dd>{domain.visibility}</dd></div><div><dt>Public creation</dt><dd>{domain.allowMailboxCreation ? "Allowed" : "Blocked"}</dd></div><div><dt>Reserved</dt><dd>{domain.reservedMailboxes.join(", ") || "None"}</dd></div></dl>
-      </article>)}</section>}
+      {tab === "domains" && <><div className="domain-admin-toolbar"><div><span className="eyebrow">Domain management</span><h2>Control member mailbox availability</h2><p>Changes are stored in this frontend preview until the domain API is available.</p></div></div><section className="domain-grid">{state.domains.map((domain) => <DomainCard key={domain.domain} domain={domain} actions={<>
+        <BeautifulSelect value={domain.status} options={[{ value: "active", label: "Active" }, { value: "upcoming", label: "Upcoming" }, { value: "disabled", label: "Disabled" }]} onChange={(value) => { const status = value as DomainStatus; updateDomain(domain.domain, (current) => ({ ...current, status, allowMailboxCreation: status === "active" && current.visibility === "public" ? current.allowMailboxCreation : false })); onToast(`${domain.domain} is now ${status}.`); }} ariaLabel={`Status for ${domain.domain}`} />
+        <button className="secondary" disabled={domain.visibility === "reserved" || domain.status !== "active"} onClick={() => { updateDomain(domain.domain, (current) => ({ ...current, allowMailboxCreation: !current.allowMailboxCreation })); onToast(`Mailbox creation ${domain.allowMailboxCreation ? "disabled" : "enabled"} for ${domain.domain}.`); }}>{domain.allowMailboxCreation ? "Disable creation" : "Enable creation"}</button>
+      </>} />)}</section></>}
     </div>
 
     {inviteOpen && <InviteUserModal state={state} onClose={() => setInviteOpen(false)} onCreated={(user, result) => { onChange({ ...state, users: [...state.users, user] }); setInviteOpen(false); setCredentials(result); }} />}
     {quotaUser && <QuotaModal user={quotaUser} unallocatedBytes={stats.unallocatedBytes} onClose={() => setQuotaUser(undefined)} onSave={(quotaBytes) => { updateUser(quotaUser.id, (user) => ({ ...user, quotaBytes })); setQuotaUser(undefined); onToast(`${quotaUser.email} now has ${formatBytes(quotaBytes)}.`); }} />}
     {inspectUser && <UserDetailsModal user={inspectUser} onClose={() => setInspectUser(undefined)} onEditQuota={() => { setQuotaUser(inspectUser); setInspectUser(undefined); }} />}
     {credentials && <CredentialsModal value={credentials} onClose={() => setCredentials(undefined)} />}
+    {domainOpen && <AddDomainModal state={state} onClose={() => setDomainOpen(false)} onCreated={(domain) => { onChange({ ...state, domains: [...state.domains, domain] }); setDomainOpen(false); onToast(`${domain.domain} added to the preview.`); }} />}
     <span className="admin-current-user" aria-hidden="true">{currentUser.email}</span>
   </section>;
+}
+
+function AddDomainModal({ state, onClose, onCreated }: { state: PlatformState; onClose(): void; onCreated(domain: DomainCapability): void }) {
+  const [name, setName] = useState("");
+  const [status, setStatus] = useState<DomainStatus>("upcoming");
+  const [allowCreation, setAllowCreation] = useState(false);
+  const [error, setError] = useState("");
+  const submit = () => {
+    const domain = name.trim().toLowerCase().replace(/^@/, "");
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) { setError("Enter a valid domain such as mail.example.com."); return; }
+    if (state.domains.some((item) => item.domain === domain)) { setError("That domain already exists."); return; }
+    onCreated({ domain, visibility: "public", status, allowMailboxCreation: status === "active" && allowCreation, reservedMailboxes: [] });
+  };
+  return <Modal title="Add a public domain" subtitle="Prepare a domain for invited-member mailbox creation." onClose={onClose} className="admin-modal"><div className="modal-content add-domain-form">
+    <label><span>Domain name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="mail.example.com" /></label>
+    <label><span>Initial status</span><BeautifulSelect value={status} options={[{ value: "active", label: "Active", description: "Ready to use" }, { value: "upcoming", label: "Upcoming", description: "Visible as coming soon" }, { value: "disabled", label: "Disabled", description: "Visible but unavailable" }]} onChange={(value) => { const next = value as DomainStatus; setStatus(next); if (next !== "active") setAllowCreation(false); }} ariaLabel="Initial domain status" /></label>
+    <button className="domain-creation-toggle" disabled={status !== "active"} onClick={() => setAllowCreation((value) => !value)}><span><strong>Allow mailbox creation</strong><small>{status === "active" ? "Show this domain in member mailbox selectors." : "Only active domains can accept new mailboxes."}</small></span><i className={allowCreation ? "on" : ""}><b /></i></button>
+    <div className="invite-callout"><Globe2 /><p><strong>Frontend configuration only.</strong><span>DNS and mail-server setup are not changed by this action.</span></p></div>
+    {error && <p className="form-error">{error}</p>}
+  </div><footer className="modal-actions"><button className="text-button" onClick={onClose}>Cancel</button><button className="primary" onClick={submit}><Plus /> Add domain</button></footer></Modal>;
 }
 
 function StatCard({ icon, label, value, detail, tone }: { icon: ReactNode; label: string; value: string; detail: string; tone: string }) {

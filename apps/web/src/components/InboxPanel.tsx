@@ -37,7 +37,7 @@ export function InboxPanel(props: Props) {
       <BeautifulSelect disabled={props.mailboxStatus !== "active"} className="sort-select" value={props.sort} options={[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "sender", label: "Sender" }]} onChange={(value) => props.onSort(value as Props["sort"])} ariaLabel="Sort messages" leadingIcon={<ArrowDownUp />} minMenuWidth={145} />
     </div>
     <div className="message-list">
-      {props.mailboxStatus === "none" ? <Empty icon={<Plus />} title="Create your first mailbox" copy="Pick an address and lifetime. No account needed." action="Create mailbox" onAction={props.onCreate} />
+      {props.mailboxStatus === "none" ? <Empty icon={<Plus />} title="Create your first mailbox" copy="Pick a private address and lifetime for your account." action="Create mailbox" onAction={props.onCreate} />
         : props.mailboxStatus === "expired" ? <Empty icon={<Inbox />} title="This mailbox has expired" copy="Message access has stopped. You can remove it from the sidebar while cleanup finishes." onAction={props.onCreate} />
         : !props.loading && !sorted.length ? <Empty icon={<Inbox />} title={props.search ? "No matching mail" : "Your inbox is ready"} copy={props.search ? "Try a different sender or subject." : "New messages will appear here instantly."} action={props.development && !props.search ? "Send a test message" : undefined} onAction={props.onDemo} />
         : sorted.map((message) => <button key={message.id} className={`message-row ${message.id === props.selectedId ? "selected" : ""} ${!message.isRead ? "unread" : ""}`} onClick={() => props.onSelect(message.id)}>

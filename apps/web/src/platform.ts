@@ -1,6 +1,7 @@
 export type UserRole = "admin" | "member";
 export type AccountStatus = "active" | "disabled";
 export type MailboxType = "admin" | "temporary";
+export type DomainStatus = "active" | "upcoming" | "disabled";
 
 export interface PlatformUser {
   id: string;
@@ -22,7 +23,7 @@ export interface DomainCapability {
   domain: string;
   visibility: "public" | "reserved";
   allowMailboxCreation: boolean;
-  status: "active" | "planned";
+  status: DomainStatus;
   reservedMailboxes: string[];
 }
 
@@ -79,7 +80,7 @@ export const initialPlatformState: PlatformState = {
   },
   domains: [
     { domain: "relaybox.ryzn.pro", visibility: "public", allowMailboxCreation: true, status: "active", reservedMailboxes: [] },
-    { domain: "mail.arcn.online", visibility: "public", allowMailboxCreation: true, status: "planned", reservedMailboxes: [] },
+    { domain: "mail.arcn.online", visibility: "public", allowMailboxCreation: false, status: "upcoming", reservedMailboxes: [] },
     { domain: "arcn.online", visibility: "reserved", allowMailboxCreation: false, status: "active", reservedMailboxes: ["arc@arcn.online"] },
   ],
   users: [
@@ -121,13 +122,21 @@ export function platformStorageStats(state: PlatformState): StorageStats {
 }
 
 export function publicDomains(state: PlatformState): string[] {
-  return state.domains.filter((domain) => domain.visibility === "public" && domain.allowMailboxCreation).map((domain) => domain.domain);
+  return state.domains.filter((domain) => domain.visibility === "public" && domain.status === "active" && domain.allowMailboxCreation).map((domain) => domain.domain);
 }
 
 export function loadPlatformState(): PlatformState {
   try {
     const stored = JSON.parse(localStorage.getItem(PLATFORM_KEY) ?? "null") as PlatformState | null;
-    return stored?.users && stored.domains && stored.storage ? stored : structuredClone(initialPlatformState);
+    if (!stored?.users || !stored.domains || !stored.storage) return structuredClone(initialPlatformState);
+    return {
+      ...stored,
+      domains: stored.domains.map((domain) => ({
+        ...domain,
+        status: (domain.status as string) === "planned" ? "upcoming" : domain.status,
+        allowMailboxCreation: (domain.status as string) === "planned" ? false : domain.allowMailboxCreation,
+      })),
+    };
   } catch { return structuredClone(initialPlatformState); }
 }
 

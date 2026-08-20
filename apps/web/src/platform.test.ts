@@ -14,6 +14,7 @@ describe("platform preview model", () => {
 
   it("only exposes explicitly public mailbox domains", () => {
     expect(publicDomains(initialPlatformState)).toContain("relaybox.ryzn.pro");
+    expect(publicDomains(initialPlatformState)).not.toContain("mail.arcn.online");
     expect(publicDomains(initialPlatformState)).not.toContain("arcn.online");
     expect(initialPlatformState.users[0]).toMatchObject({ role: "admin", mailboxType: "admin", isProtected: true });
   });

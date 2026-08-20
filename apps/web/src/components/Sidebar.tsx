@@ -1,4 +1,4 @@
-import { Check, Clock3, Copy, Inbox, LayoutDashboard, LogOut, Mail, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, Clock3, Copy, Globe2, Inbox, LayoutDashboard, LogOut, Mail, Plus, Settings, ShieldCheck, Trash2, X } from "lucide-react";
 import type { Mailbox } from "@relaybox/shared";
 import type { PlatformUser } from "../platform";
 import { Brand } from "./Brand";
@@ -12,7 +12,7 @@ interface Props {
   now: number;
   open: boolean;
   user?: PlatformUser;
-  view?: "mail" | "admin";
+  view?: "mail" | "domains" | "admin";
   onClose(): void;
   onSelect(address: string): void;
   onCopy(): void;
@@ -21,10 +21,11 @@ interface Props {
   onSettings(): void;
   onMail?(): void;
   onAdmin?(): void;
+  onDomains?(): void;
   onLogout?(): void;
 }
 
-export function Sidebar({ mailboxes, active, copied, now, open, user, view = "mail", onClose, onSelect, onCopy, onCreate, onDelete, onSettings, onMail, onAdmin, onLogout }: Props) {
+export function Sidebar({ mailboxes, active, copied, now, open, user, view = "mail", onClose, onSelect, onCopy, onCreate, onDelete, onSettings, onMail, onAdmin, onDomains, onLogout }: Props) {
   const expired = active ? isMailboxExpired(active, now) : false;
   const activeCount = mailboxes.filter((mailbox) => !isMailboxExpired(mailbox, now)).length;
   return <aside className={`sidebar ${open ? "is-open" : ""}`}>
@@ -67,6 +68,7 @@ export function Sidebar({ mailboxes, active, copied, now, open, user, view = "ma
       {user && <>
         <nav className="account-navigation" aria-label="Account navigation">
           <button className={view === "mail" ? "active" : ""} onClick={onMail}><Mail /> Mail</button>
+          {user.role === "member" && <button className={view === "domains" ? "active" : ""} onClick={onDomains}><Globe2 /> Domains</button>}
           {user.role === "admin" && <button className={view === "admin" ? "active" : ""} onClick={onAdmin}><LayoutDashboard /> Admin</button>}
           <button onClick={onSettings}><Settings /> Settings</button>
         </nav>
